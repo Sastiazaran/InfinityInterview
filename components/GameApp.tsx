@@ -112,12 +112,6 @@ export function GameApp() {
     });
   }, [bridge, run, onMap, overlay]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), toast.tone === "chapter" ? 3400 : 2800);
-    return () => window.clearTimeout(timer);
-  }, [toast]);
-
   // ——— Small helpers, called from handlers only ———
 
   function fill(line: string): string {
@@ -153,6 +147,7 @@ export function GameApp() {
   function clearOverlays() {
     setPanels([]);
     setTalks([]);
+    setToast(null);
   }
 
   function eggTalk(egg: EggId): Omit<Talk, "id"> {
@@ -233,7 +228,6 @@ export function GameApp() {
     clearOverlays();
     setEnding(null);
     setPops([]);
-    setToast(null);
     setScreen("title");
   }
 
@@ -546,7 +540,15 @@ export function GameApp() {
             </div>
           )}
           {toast && (
-            <p key={toast.id} className={`toast ${toast.tone ?? ""}`} role="status">
+            <p
+              key={toast.id}
+              className={`toast ${toast.tone ?? ""}`}
+              role="status"
+              onAnimationEnd={(event) => {
+                if (event.target !== event.currentTarget) return;
+                setToast((current) => (current?.id === toast.id ? null : current));
+              }}
+            >
               {toast.icon && <Icon id={toast.icon} scale={1} />}
               <span>{toast.text}</span>
             </p>
