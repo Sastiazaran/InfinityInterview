@@ -144,6 +144,12 @@ kbd {
   cursor: default;
 }
 
+.chip.spent {
+  opacity: 0.55;
+  box-shadow: none;
+  border-style: dashed;
+}
+
 .chip:not(:disabled):active {
   transform: translateY(2px);
   box-shadow: none;
@@ -270,7 +276,7 @@ kbd {
 
 .world {
   position: absolute;
-  inset: 0;
+  inset: 0 0 var(--pad-h);
   z-index: 0;
 }
 
@@ -2661,7 +2667,7 @@ kbd {
   .duel {
     grid-template-columns: minmax(0, 640px) minmax(380px, 560px);
     align-items: start;
-    padding: 18px 20px 24px;
+    padding: clamp(18px, calc(50dvh - 290px), 140px) 20px 24px;
     gap: 18px;
   }
 
@@ -2867,7 +2873,8 @@ kbd {
 }
 
 @media (max-width: 420px) {
-  .hud-goal {
+  .hud-goal,
+  .hud-menu {
     display: none;
   }
 

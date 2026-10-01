@@ -410,13 +410,30 @@ export function Duel({
               </div>
             ))}
             <div className="lifelines">
-              <button type="button" tabIndex={-1} className="chip" disabled={hinted} onClick={takeHint}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className={`chip ${lifelines.hint <= 0 ? "spent" : ""}`}
+                disabled={hinted}
+                onClick={takeHint}
+              >
                 <kbd>H</kbd> Hint <b>{lifelines.hint}</b>
               </button>
-              <button type="button" tabIndex={-1} className="chip" onClick={takeTime}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className={`chip ${lifelines.time <= 0 ? "spent" : ""}`}
+                onClick={takeTime}
+              >
                 <kbd>T</kbd> Extra time <b>{lifelines.time}</b>
               </button>
-              <button type="button" tabIndex={-1} className="chip" disabled={senior} onClick={askSenior}>
+              <button
+                type="button"
+                tabIndex={-1}
+                className={`chip ${lifelines.senior <= 0 ? "spent" : ""}`}
+                disabled={senior}
+                onClick={askSenior}
+              >
                 <kbd>S</kbd> Ask a senior <b>{lifelines.senior}</b>
               </button>
               <button type="button" tabIndex={-1} className="chip ghost" onClick={onSatchel}>
