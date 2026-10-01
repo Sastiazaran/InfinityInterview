@@ -332,11 +332,13 @@ function drawSentinel(ctx: Ctx, frame: Expression, age: number) {
   pix(ctx, 36, 9, trim[2]);
   rect(ctx, 24, 28, 4, 10, metal[2]);
   rect(ctx, 46, 26, 5, 12, metal[1]);
-  rect(ctx, 28, 23, 20, 10, "#16110e");
+  rect(ctx, 28, 22, 20, 12, "#16110e");
   rect(ctx, 29, 24, 18, 8, SKIN_MID);
   hline(ctx, 29, 24, 18, SKIN_LO);
   hline(ctx, 28, 22, 20, metal[0]);
   hline(ctx, 28, 33, 20, metal[2]);
+  vline(ctx, 28, 23, 10, metal[1]);
+  vline(ctx, 47, 23, 10, metal[2]);
   if (frame === "defeated") {
     xEye(ctx, 31, 26);
     xEye(ctx, 42, 26);
@@ -622,9 +624,13 @@ function drawExaminer(ctx: Ctx, frame: Expression, age: number) {
     pix(ctx, 50, 30, gem[0]);
     pix(ctx, 36, 27, gem[1]);
   }
-  vline(ctx, 38, 36, 5, "#b88868");
+  vline(ctx, 38, 36, 6, "#b88868");
   pix(ctx, 37, 40, "#a07058");
   pix(ctx, 39, 40, "#a07058");
+  hline(ctx, 30, 38, 4, "#c49878");
+  hline(ctx, 43, 38, 4, "#c49878");
+  pix(ctx, 31, 46, "#b88868");
+  pix(ctx, 45, 46, "#b88868");
   mouth(ctx, 38, 44, frame === "hurt" ? "wince" : frame === "defeated" ? "slack" : "stern");
   hline(ctx, 30, 42, 3, "#c49878");
   hline(ctx, 44, 42, 3, "#c49878");

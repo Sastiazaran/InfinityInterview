@@ -10,30 +10,35 @@ function done(ctx: Ctx) {
 }
 
 function heart(ctx: Ctx, filled: boolean) {
-  const top = filled ? "#e07070" : "transparent";
-  const mid = filled ? "#c44949" : "transparent";
-  const lo = filled ? "#8a3030" : "transparent";
+  const rows = [
+    "..kk...kk..",
+    ".krrk.krrk.",
+    "krrrrrrrrrk",
+    "krrrrrrrrrk",
+    ".krrrrrrrk.",
+    "..krrrrrk..",
+    "...krrrk...",
+    "....krk....",
+    ".....k.....",
+  ];
+  const pal = filled
+    ? { k: "#8a3030", r: "#c44949" }
+    : { k: "#c44949", r: "" };
+  paintHeart(ctx, rows, pal);
   if (filled) {
-    fillEllipse(ctx, 5.2, 6, 3.1, 3, top);
-    fillEllipse(ctx, 10.6, 6, 3.1, 3, mid);
-    for (let i = 0; i < 6; i++) hline(ctx, 3 + i, 8 + i, 10 - i * 2, i < 3 ? mid : lo);
-    pix(ctx, 4, 5, "#f4c0c0");
-  } else {
-    ring(ctx, 5.2, 6.2, 2.6, "#c44949");
-    ring(ctx, 10.4, 6.2, 2.6, "#c44949");
-    pix(ctx, 3, 8, "#c44949");
-    pix(ctx, 4, 9, "#c44949");
-    pix(ctx, 5, 10, "#c44949");
-    pix(ctx, 6, 11, "#c44949");
-    pix(ctx, 7, 12, "#c44949");
-    pix(ctx, 8, 13, "#8a3030");
-    pix(ctx, 9, 12, "#c44949");
-    pix(ctx, 10, 11, "#c44949");
-    pix(ctx, 11, 10, "#c44949");
-    pix(ctx, 12, 9, "#c44949");
-    pix(ctx, 13, 8, "#c44949");
+    pix(ctx, 4, 3, "#f4c0c0");
+    pix(ctx, 5, 4, "#e07070");
   }
   done(ctx);
+}
+
+function paintHeart(ctx: Ctx, rows: string[], pal: Record<string, string>) {
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const color = pal[row[x]];
+      if (color) pix(ctx, 3 + x, 3 + y, color);
+    }
+  });
 }
 
 function coin(ctx: Ctx) {
@@ -46,58 +51,26 @@ function coin(ctx: Ctx) {
 }
 
 function star(ctx: Ctx) {
-  const pts: ReadonlyArray<readonly [number, number]> = [
-    [8, 1],
-    [7, 2],
-    [8, 2],
-    [9, 2],
-    [3, 5],
-    [4, 5],
-    [5, 5],
-    [6, 5],
-    [7, 5],
-    [8, 5],
-    [9, 5],
-    [10, 5],
-    [11, 5],
-    [12, 5],
-    [6, 6],
-    [7, 6],
-    [8, 6],
-    [9, 6],
-    [10, 6],
-    [5, 7],
-    [6, 7],
-    [7, 7],
-    [8, 7],
-    [9, 7],
-    [10, 7],
-    [11, 7],
-    [4, 8],
-    [5, 8],
-    [6, 8],
-    [7, 9],
-    [8, 9],
-    [9, 9],
-    [10, 8],
-    [11, 8],
-    [12, 8],
-    [3, 10],
-    [4, 10],
-    [5, 11],
-    [6, 12],
-    [7, 13],
-    [8, 14],
-    [9, 13],
-    [10, 12],
-    [11, 11],
-    [12, 10],
-    [13, 10],
+  const rows = [
+    "....k....",
+    "...kGk...",
+    "..kGGGk..",
+    ".kGGGGGk.",
+    "kGGkkkGGk",
+    ".kkGGGkk.",
+    "..kGGGk..",
+    "..kG.Gk..",
+    ".kG...Gk.",
+    "kG.....Gk",
   ];
-  for (const [x, y] of pts) pix(ctx, x, y, "#e2c07a");
-  pix(ctx, 8, 3, "#f0d9a0");
-  pix(ctx, 6, 6, "#f0d9a0");
-  pix(ctx, 12, 8, "#a67c3d");
+  const pal: Record<string, string> = { k: "#a67c3d", G: "#e2c07a" };
+  rows.forEach((row, y) => {
+    for (let x = 0; x < row.length; x++) {
+      const color = pal[row[x]];
+      if (color) pix(ctx, 3 + x, 2 + y, color);
+    }
+  });
+  pix(ctx, 8, 4, "#f0d9a0");
   done(ctx);
 }
 
@@ -161,14 +134,16 @@ function hourglass(ctx: Ctx) {
 }
 
 function seal(ctx: Ctx) {
-  fillEllipse(ctx, 8, 8, 5.5, 5.5, "#8a3030");
-  fillEllipse(ctx, 8, 8, 4.2, 4.2, "#c44949");
-  fillEllipse(ctx, 6.5, 6.5, 1.6, 1.4, "#e07070");
-  pix(ctx, 8, 6, "#f4e7cf");
-  pix(ctx, 7, 8, "#f4e7cf");
-  pix(ctx, 9, 8, "#f4e7cf");
-  pix(ctx, 8, 10, "#f4e7cf");
-  rect(ctx, 3, 12, 4, 2, "#e7d3ae");
+  rect(ctx, 2, 11, 3, 3, "#e7d3ae");
+  rect(ctx, 11, 11, 3, 3, "#c4ae82");
+  hline(ctx, 4, 12, 8, "#f4e7cf");
+  fillEllipse(ctx, 8, 7, 5, 5, "#8a3030");
+  fillEllipse(ctx, 8, 7, 4, 4, "#c44949");
+  fillEllipse(ctx, 6.5, 5.5, 1.5, 1.3, "#e07070");
+  pix(ctx, 8, 5, "#f4e7cf");
+  pix(ctx, 7, 7, "#f4e7cf");
+  pix(ctx, 9, 7, "#f4e7cf");
+  pix(ctx, 8, 8, "#f0d9a0");
   done(ctx);
 }
 
@@ -193,12 +168,15 @@ function scroll(ctx: Ctx) {
 }
 
 function sand(ctx: Ctx) {
-  fillEllipse(ctx, 8, 11, 5, 3, "#c8b07a");
-  fillEllipse(ctx, 7, 10, 4, 2.4, "#e4d0a4");
-  fillEllipse(ctx, 6, 9, 2, 1.4, "#f3e4c2");
-  pix(ctx, 10, 8, "#e2c07a");
-  pix(ctx, 11, 10, "#f3e4c2");
-  pix(ctx, 5, 11, "#c8b07a");
+  shadedBox(ctx, 4, 3, 8, 7, "#c4a36e", "#a88858", "#6e5430");
+  hline(ctx, 6, 3, 4, "#e4d0a4");
+  vline(ctx, 7, 1, 2, "#8b5a32");
+  hline(ctx, 5, 1, 5, "#c49464");
+  fillEllipse(ctx, 5, 12, 3, 2, "#e4d0a4");
+  fillEllipse(ctx, 10, 13, 3.2, 1.8, "#c8b07a");
+  pix(ctx, 3, 11, "#f3e4c2");
+  pix(ctx, 12, 10, "#f3e4c2");
+  pix(ctx, 8, 14, "#a88858");
   done(ctx);
 }
 

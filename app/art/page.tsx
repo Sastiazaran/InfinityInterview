@@ -53,17 +53,17 @@ function Row({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-const SHORE = ["........", ".uuuuuu.", ".eggggw.", ".eggggw.", ".nnnnnn.", "........"];
+const SHORE = ["........", "..uuuu..", ".eggggw.", ".eggggw.", "..nnnn..", "........"];
 
 const ROUTE = [
   "..............",
-  ".uuuuuuuuuuuu.",
+  "..uuuuuuuuuu..",
   ".egggkkkkgggw.",
   ".egfpllllgggw.",
   ".egpoxrrrppgw.",
   ".etgpppppppgw.",
   ".esbbssssssgw.",
-  ".nnnnnnnnnnnn.",
+  "..nnnnnnnnnn..",
   "..............",
 ];
 

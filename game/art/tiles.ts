@@ -31,7 +31,9 @@ const BRICK_LO = "#6a645c";
 function waterColor(x: number, y: number, alt: boolean): string {
   const yy = y + (alt ? 2 : 0);
   const band = Math.floor(yy / 2) % 4;
-  if (((x * 3 + yy * 5) & 15) === 0) return "#3a6898";
+  const n = hash(x + 4, yy * 3 + (alt ? 11 : 2));
+  if (n % 41 === 0) return "#8eb4d4";
+  if (n % 29 === 0) return "#3a6898";
   return SEA[band];
 }
 
@@ -59,19 +61,22 @@ function grassSpecks(ctx: Ctx, salt: number) {
 function sandLip(ctx: Ctx, edge: "N" | "S" | "E" | "W") {
   fillWater(ctx, false);
   if (edge === "N" || edge === "S") {
-    const y = edge === "N" ? 0 : 11;
-    rect(ctx, 0, y, 16, 5, SAND);
-    for (let x = 1; x < 15; x++) if (hash(x, y) % 5 === 0) pix(ctx, x, y + 1, SAND_HI);
-    hline(ctx, 0, edge === "N" ? 4 : 10, 16, SAND_LO);
-    hline(ctx, 0, edge === "N" ? 5 : 9, 16, FOAM);
-    hline(ctx, 0, edge === "N" ? 6 : 8, 16, WET);
+    const y = edge === "N" ? 0 : 13;
+    rect(ctx, 0, y, 16, 3, SAND);
+    hline(ctx, 0, y, 16, SAND_HI);
+    hline(ctx, 0, edge === "N" ? 2 : 15, 16, SAND_LO);
+    const foam = edge === "N" ? 3 : 12;
+    hline(ctx, 0, foam, 16, FOAM);
+    for (let x = 0; x < 16; x++) if (hash(x, foam) % 3 === 0) pix(ctx, x, foam, WET);
     return;
   }
-  const x = edge === "W" ? 0 : 11;
-  rect(ctx, x, 0, 5, 16, SAND);
-  vline(ctx, edge === "W" ? 4 : 11, 0, 16, SAND_LO);
-  vline(ctx, edge === "W" ? 5 : 10, 0, 16, FOAM);
-  vline(ctx, edge === "W" ? 6 : 9, 0, 16, WET);
+  const x = edge === "W" ? 0 : 13;
+  rect(ctx, x, 0, 3, 16, SAND);
+  vline(ctx, x, 0, 16, edge === "W" ? SAND_HI : SAND_LO);
+  vline(ctx, edge === "W" ? 2 : 15, 0, 16, edge === "W" ? SAND_LO : SAND_HI);
+  const foam = edge === "W" ? 3 : 12;
+  vline(ctx, foam, 0, 16, FOAM);
+  for (let y = 0; y < 16; y++) if (hash(foam, y) % 3 === 0) pix(ctx, foam, y, WET);
 }
 
 function bricks(ctx: Ctx, top: boolean) {
