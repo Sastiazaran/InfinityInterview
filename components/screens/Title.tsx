@@ -79,13 +79,18 @@ export function Title({
     {
       id: "new",
       label: "New climb",
-      detail: `Choose a Bloodline, I to ${toRoman(save.unlocked)}`,
+      detail: save.unlocked > 1 ? `Choose a Bloodline, I to ${toRoman(save.unlocked)}` : "Begin at Bloodline I",
       onSelect: () => {
         setPick(Math.min(save.unlocked, Math.max(1, save.lastBloodline)));
         setMode("select");
       },
     },
-    { id: "codex", label: "Codex", detail: `${save.codex.length} lessons from past misses`, onSelect: onCodex },
+    {
+      id: "codex",
+      label: "Codex",
+      detail: `${save.codex.length} ${save.codex.length === 1 ? "lesson" : "lessons"} from past misses`,
+      onSelect: onCodex,
+    },
     { id: "secrets", label: "Secrets", detail: `${save.secrets.length}/${EGG_IDS.length} found`, onSelect: onSecrets },
     { id: "controls", label: "Controls", onSelect: onControls },
     { id: "wipe", label: "Start over", detail: "Erase this save", onSelect: onStartOver },
