@@ -1,582 +1,596 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {
-  BLOODLINE_COPY,
-  enemyHeartCount,
-  killGold,
-  playerHeartMax,
-  PRICES,
-  secondsFor,
-  startingLifelines,
-} from "@/game/balance";
-import { nextChallenge } from "@/game/content/challenges";
-import { NODES, presentNode } from "@/game/route";
-import { loadSave, rememberMiss, writeSave } from "@/game/save";
-import type { Bloodline, Challenge, CodexEntry, Gear, Run, Save, Topic } from "@/game/types";
-import { CastleMap } from "./CastleMap";
-import { ChallengeView } from "./ChallengeView";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { ART } from "@/game/art";
+import { EGGS, fillLine, NODE_IDS, type EggId, type IconId, type NpcId } from "@/game/contracts";
+import { STORY } from "@/game/story";
+import { awardEgg, beginDuel, clearStage, fallClimb, newRun, openChest, placePlayer, visitNpc } from "@/game/engine";
+import { SequenceWatch, sequenceToken, type SequenceId } from "@/game/eggs";
+import { hash } from "@/game/rng";
+import { enemyOf, nodeAt } from "@/game/route";
+import { emptySave, loadSave, wipeSave, writeSave } from "@/game/save";
+import type { Save } from "@/game/types";
+import { WorldBridge, type WorldEvent } from "@/game/world/bridge";
+import { START } from "@/game/world/map";
+import { Duel } from "./duel/Duel";
+import { isConfirm, isMenu, LAYER, useKeyLayer, useKeyUp, walkOf } from "./keys";
+import { Overworld } from "./Overworld";
+import { Codex } from "./screens/Codex";
+import { Confirm } from "./screens/Confirm";
+import { Controls } from "./screens/Controls";
+import { Hud, type GoldPop } from "./screens/Hud";
+import { Pause } from "./screens/Pause";
+import { Rebirth, type Ending } from "./screens/Rebirth";
+import { Satchel } from "./screens/Satchel";
+import { Secrets } from "./screens/Secrets";
+import { Shop } from "./screens/Shop";
+import { Title } from "./screens/Title";
+import { TouchPad } from "./screens/TouchPad";
+import { Store, useStore } from "./store";
+import { Dialog, type DialogTone } from "./ui/Dialog";
+import { Icon } from "./ui/Sprites";
 
-type Screen = "select" | "map" | "duel" | "feedback" | "rebirth" | "armory" | "codex";
+type Screen = "title" | "map" | "duel" | "rebirth";
 
-type Banner = {
-  title: string;
-  tone: "hit" | "wound" | "block" | "slain" | "fall" | "throne";
-  slain: boolean;
-  dead: boolean;
-  victory: boolean;
+type ConfirmAction = "restart" | "abandon" | "wipe";
+
+type PanelState =
+  | { kind: "pause" }
+  | { kind: "shop" }
+  | { kind: "satchel" }
+  | { kind: "codex" }
+  | { kind: "secrets" }
+  | { kind: "controls"; first: boolean }
+  | { kind: "confirm"; action: ConfirmAction; bloodline: number };
+
+type Talk = {
+  id: number;
+  lines: string[];
+  tone: DialogTone;
+  speaker?: string;
+  portrait?: NpcId;
+  title?: string;
+  /** Darkens the whole screen, for the prologue. */
+  veil?: boolean;
+  /** Opens once the last line is dismissed. */
+  then?: "shop" | "controls";
+  /** Granted once the last line is dismissed. */
+  egg?: EggId;
 };
 
-const GEAR_COPY: { key: keyof Gear; name: string; line: string }[] = [
-  { key: "armor", name: "Armor", line: "One more heart at the start of every climb." },
-  { key: "shield", name: "Shield", line: "The first miss in each duel is blocked." },
-  { key: "codexLens", name: "Codex lens", line: "A hint also names the principle." },
-  { key: "hourglass", name: "Hourglass", line: "One extra charge of Extra time." },
-  { key: "mentorSeal", name: "Mentor's seal", line: "One extra charge of Ask a senior." },
-];
+type Toast = { id: number; text: string; icon?: IconId; tone?: "chapter" };
+
+let serial = 0;
+const nextId = () => ++serial;
+
+function randomLine(pool: readonly string[]): string {
+  return pool.length ? pool[Math.floor(Math.random() * pool.length)] : "";
+}
+
+function climbId(): string {
+  return `${Date.now().toString(36)}${Math.floor(Math.random() * 1e8).toString(36)}`;
+}
+
+const CONFIRM_YES: Record<ConfirmAction, string> = {
+  restart: "Restart the climb",
+  abandon: "Begin the new climb",
+  wipe: "Erase everything",
+};
 
 export function GameApp() {
-  const [save, setSave] = useState<Save | null>(null);
-  const [screen, setScreen] = useState<Screen>("select");
-  const [back, setBack] = useState<Screen>("select");
-  const [run, setRun] = useState<Run | null>(null);
-  const [banner, setBanner] = useState<Banner | null>(null);
-  const [victory, setVictory] = useState(false);
-  const [eliminated, setEliminated] = useState<number[]>([]);
-  const [hintOn, setHintOn] = useState(false);
-  const [seniorOn, setSeniorOn] = useState(false);
-  const [remain, setRemain] = useState(0);
-  const [seats, setSeats] = useState<Topic[]>([]);
-  const endsRef = useRef(0);
-  const pausedRef = useRef(0);
-  const screenRef = useRef<Screen>("select");
-  const lockRef = useRef(false);
-  const continuedRef = useRef(false);
-  const timeoutRef = useRef<() => void>(() => {});
+  const [store] = useState(() => new Store<Save>(loadSave()));
+  const [bridge] = useState(() => new WorldBridge());
+  const save = useStore(store);
+  const [screen, setScreen] = useState<Screen>("title");
+  const [panels, setPanels] = useState<PanelState[]>([]);
+  const [talks, setTalks] = useState<Talk[]>([]);
+  const [toast, setToast] = useState<Toast | null>(null);
+  const [pops, setPops] = useState<GoldPop[]>([]);
+  const [ending, setEnding] = useState<Ending | null>(null);
+  const [duelKey, setDuelKey] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [pauseAt, setPauseAt] = useState(0);
+  const jokes = useRef(new Set<string>());
+
+  const run = save.run;
+  const panel = panels.at(-1) ?? null;
+  const talk = talks[0] ?? null;
+  const overlay = panel !== null || talk !== null;
+  const onMap = screen === "map";
+
+  useEffect(() => store.subscribe(() => writeSave(store.get())), [store]);
 
   useEffect(() => {
-    // localStorage is read after mount so the server and the first paint match.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSave(loadSave());
-  }, []);
-
-  useEffect(() => {
-    if (save) writeSave(save);
-  }, [save]);
-
-  useEffect(() => {
-    screenRef.current = screen;
-  }, [screen]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const left = Math.max(0, Math.ceil((endsRef.current - Date.now()) / 1000));
-      setRemain(left);
-      if (screenRef.current === "duel" && Date.now() >= endsRef.current) {
-        timeoutRef.current();
-      }
-    }, 200);
-    return () => window.clearInterval(id);
-  }, []);
-
-  function open(next: Screen, from: Screen) {
-    if (from === "duel") pausedRef.current = Math.max(1000, endsRef.current - Date.now());
-    setBack(from);
-    setScreen(next);
-  }
-
-  function closeOverlay() {
-    if (back === "duel") endsRef.current = Date.now() + pausedRef.current;
-    setScreen(back);
-  }
-
-  function freshQuestion(current: Run, heartIndex: number, seatList: Topic[]): Challenge {
-    const node = NODES[current.nodeIndex];
-    const challenge = nextChallenge({
-      bloodline: current.bloodline,
-      role: node.role,
-      heartIndex,
-      avoid: save?.lastSeen ?? [],
-      usedIds: current.usedIds,
-      salt: Math.floor(Math.random() * 100000) + heartIndex * 17,
-      bossSeatsUsed: seatList,
+    bridge.set({
+      climbId: run?.id ?? null,
+      bloodline: run?.bloodline ?? 1,
+      nodeIndex: run?.nodeIndex ?? 0,
+      chests: run?.chests ?? [],
+      start: run?.pos ?? START,
+      visible: onMap,
+      active: onMap && !overlay,
     });
-    if (challenge.kind === "mcq" && challenge.seat) {
-      setSeats([...seatList, challenge.seat]);
-    }
-    return challenge;
-  }
-
-  function armQuestion(challenge: Challenge) {
-    const seconds = secondsFor(run?.bloodline ?? 1);
-    endsRef.current = Date.now() + seconds * 1000;
-    lockRef.current = false;
-    setEliminated([]);
-    setHintOn(false);
-    setSeniorOn(false);
-    setRemain(seconds);
-    continuedRef.current = false;
-    return challenge;
-  }
-
-  function startClimb(bloodline: Bloodline) {
-    if (!save || bloodline > save.unlocked) return;
-    const max = playerHeartMax(save.gear);
-    const enemyMax = enemyHeartCount(bloodline, NODES[0].role);
-    setSeats([]);
-    setRun({
-      bloodline,
-      nodeIndex: 0,
-      playerHearts: max,
-      playerMax: max,
-      enemyHearts: enemyMax,
-      enemyMax,
-      gold: 0,
-      lifelines: startingLifelines(save.gear),
-      shieldLeft: save.gear.shield,
-      usedIds: [],
-      challenge: null,
-    });
-    setScreen("map");
-  }
-
-  function engage() {
-    if (!run || !save) return;
-    const seatList = NODES[run.nodeIndex].role === "boss" ? [] : seats;
-    if (NODES[run.nodeIndex].role === "boss") setSeats([]);
-    const challenge = freshQuestion({ ...run, usedIds: run.usedIds }, 0, seatList);
-    const next = {
-      ...run,
-      challenge,
-      usedIds: [...run.usedIds, challenge.id],
-      shieldLeft: save.gear.shield,
-    };
-    setRun(next);
-    armQuestion(challenge);
-    setScreen("duel");
-  }
-
-  function resolve(correct: boolean) {
-    if (!run || !run.challenge || !save || lockRef.current) return;
-    lockRef.current = true;
-    const challenge = run.challenge;
-    let playerHearts = run.playerHearts;
-    let enemyHearts = run.enemyHearts;
-    let shieldLeft = run.shieldLeft;
-    let tone: Banner["tone"] = correct ? "hit" : "wound";
-    if (!correct && shieldLeft) {
-      shieldLeft = false;
-      tone = "block";
-    } else if (!correct) {
-      playerHearts -= 1;
-    } else {
-      enemyHearts -= 1;
-    }
-
-    if (!correct) {
-      const entry: CodexEntry = {
-        id: challenge.id,
-        prompt: challenge.prompt,
-        reveal: challenge.reveal,
-        why: challenge.why,
-        principle: challenge.principle,
-        topic: challenge.topic,
-        bloodline: challenge.bloodline,
-        at: Date.now(),
-      };
-      setSave((prev) => (prev ? rememberMiss(prev, entry) : prev));
-    }
-
-    const dead = playerHearts <= 0;
-    const slain = enemyHearts <= 0;
-    const boss = NODES[run.nodeIndex].role === "boss";
-    let gold = run.gold;
-    let title = correct ? "The blow lands." : "You take the hit.";
-    if (tone === "block") title = "The shield takes it.";
-    if (slain && boss) title = "The throne is empty.";
-    else if (slain) title = `${presentNode(NODES[run.nodeIndex], run.bloodline).name} falls.`;
-    if (dead) title = "Your hearts are gone.";
-    if (slain) gold += killGold(run.bloodline, boss);
-
-    const nextRun: Run = {
-      ...run,
-      playerHearts,
-      enemyHearts,
-      shieldLeft,
-      gold,
-    };
-    setRun(nextRun);
-    setBanner({
-      title,
-      tone: dead ? "fall" : slain && boss ? "throne" : slain ? "slain" : tone,
-      slain,
-      dead,
-      victory: slain && boss,
-    });
-    setScreen("feedback");
-  }
+  }, [bridge, run, onMap, overlay]);
 
   useEffect(() => {
-    timeoutRef.current = () => resolve(false);
-  });
+    if (!toast) return;
+    const timer = window.setTimeout(() => setToast(null), toast.tone === "chapter" ? 3400 : 2800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
-  function continueFromFeedback() {
-    if (!run || !banner || !save || continuedRef.current) return;
-    continuedRef.current = true;
-    if (banner.dead || banner.victory) {
-      const bloodline = run.bloodline;
-      const earned = run.gold;
-      const seen = run.usedIds.slice(-80);
-      setSave((prev) => {
-        if (!prev) return prev;
-        const nextUnlocked = Math.max(prev.unlocked, Math.min(3, bloodline + 1)) as Bloodline;
-        return { ...prev, gold: prev.gold + earned, unlocked: nextUnlocked, lastSeen: seen };
-      });
-      setVictory(banner.victory);
-      setScreen("rebirth");
-      return;
-    }
-    if (banner.slain) {
-      const nodeIndex = run.nodeIndex + 1;
-      const enemyMax = enemyHeartCount(run.bloodline, NODES[nodeIndex].role);
-      setRun({
-        ...run,
-        nodeIndex,
-        enemyHearts: enemyMax,
-        enemyMax,
-        challenge: null,
-        shieldLeft: save.gear.shield,
-      });
-      setScreen("map");
-      return;
-    }
-    const heartIndex = run.enemyMax - run.enemyHearts;
-    const challenge = freshQuestion(run, heartIndex, seats);
-    const next = { ...run, challenge, usedIds: [...run.usedIds, challenge.id] };
-    setRun(next);
-    armQuestion(challenge);
-    setScreen("duel");
+  // ——— Small helpers, called from handlers only ———
+
+  function fill(line: string): string {
+    const current = store.get();
+    return fillLine(line, { bloodline: current.run?.bloodline ?? current.lastBloodline, gold: current.gold });
   }
 
-  function useHint() {
-    if (!run || hintOn || run.lifelines.hint <= 0) return;
-    setHintOn(true);
-    setRun({ ...run, lifelines: { ...run.lifelines, hint: run.lifelines.hint - 1 } });
+  function say(next: Omit<Talk, "id">) {
+    setTalks((list) => [...list, { ...next, id: nextId() }]);
   }
 
-  function useTime() {
-    if (!run || run.lifelines.time <= 0) return;
-    endsRef.current += 20000;
-    setRemain(Math.max(0, Math.ceil((endsRef.current - Date.now()) / 1000)));
-    setRun({ ...run, lifelines: { ...run.lifelines, time: run.lifelines.time - 1 } });
+  function pop(amount: number) {
+    if (amount > 0) setPops((list) => [...list, { id: nextId(), amount }]);
   }
 
-  function useSenior() {
-    if (!run || !run.challenge || seniorOn || run.lifelines.senior <= 0) return;
-    const challenge = run.challenge;
-    if (challenge.kind === "mcq" || challenge.kind === "model") {
-      setEliminated((prev) => {
-        const wrong = challenge.options
-          .map((_, index) => index)
-          .filter((index) => index !== challenge.answer && !prev.includes(index));
-        if (!wrong.length) return prev;
-        return [...prev, wrong[wrong.length - 1]];
-      });
-    }
-    setSeniorOn(true);
-    setRun({ ...run, lifelines: { ...run.lifelines, senior: run.lifelines.senior - 1 } });
+  function note(text: string, icon?: IconId) {
+    setToast({ id: nextId(), text, icon });
   }
 
-  function buy(key: keyof Gear) {
-    setSave((prev) => {
-      if (!prev || prev.gear[key] || prev.gold < PRICES[key]) return prev;
-      return {
-        ...prev,
-        gold: prev.gold - PRICES[key],
-        gear: { ...prev.gear, [key]: true },
-      };
-    });
+  function open(next: PanelState) {
+    setPanels((list) => [...list, next]);
   }
 
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Enter" && screen === "map" && !(event.target instanceof HTMLButtonElement)) {
-        engage();
-      }
-      if (screen === "duel" && run?.challenge && (run.challenge.kind === "mcq" || run.challenge.kind === "model")) {
-        const index = Number(event.key) - 1;
-        if (index >= 0 && index < run.challenge.options.length && !eliminated.includes(index)) {
-          resolve(index === run.challenge.answer);
-        }
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
+  function openPause() {
+    setPauseAt(0);
+    open({ kind: "pause" });
+  }
 
-  if (!save) {
-    return (
-      <main className="shell">
-        <p className="kicker">The gate is opening</p>
-      </main>
+  function close() {
+    setPanels((list) => list.slice(0, -1));
+  }
+
+  function clearOverlays() {
+    setPanels([]);
+    setTalks([]);
+  }
+
+  function eggTalk(egg: EggId): Omit<Talk, "id"> {
+    const story = STORY.eggs[egg];
+    return { tone: "egg", title: story.title, speaker: "Secret found", lines: story.lines.map(fill) };
+  }
+
+  /** Awards a secret once per save and celebrates it. Returns false when it was already found. */
+  function grant(egg: EggId): boolean {
+    const result = awardEgg(store.get(), egg);
+    if (!result.fresh) return false;
+    store.set(result.save);
+    if (screen === "map") pop(EGGS[egg].gold);
+    say(eggTalk(egg));
+    return true;
+  }
+
+  function finishTalk(done: Talk) {
+    setTalks((list) => list.filter((item) => item.id !== done.id));
+    if (done.then === "shop") open({ kind: "shop" });
+    if (done.then === "controls") open({ kind: "controls", first: true });
+    if (done.egg) grant(done.egg);
+  }
+
+  // ——— The climb ———
+
+  function beginClimb(bloodline: number) {
+    const before = store.get();
+    const started = newRun(before, bloodline, climbId());
+    const climb = started.run;
+    if (!climb) return;
+    const prologue = !started.seen.prologue;
+    const controls = !started.seen.controls;
+    store.set({ ...started, seen: { prologue: true, controls: true } });
+    jokes.current.clear();
+    setEnding(null);
+    setPops([]);
+    setTalks(
+      prologue
+        ? [
+            {
+              id: nextId(),
+              tone: "info",
+              title: STORY.title,
+              lines: STORY.prologue.map(fill),
+              veil: true,
+              then: controls ? "controls" : undefined,
+            },
+          ]
+        : [],
     );
+    setPanels(!prologue && controls ? [{ kind: "controls", first: true }] : []);
+    setScreen("map");
+    const chapter = STORY.chapter(climb.bloodline);
+    setToast({ id: nextId(), text: `Bloodline ${chapter.numeral} · ${chapter.title}`, tone: "chapter" });
   }
 
-  const node = run ? presentNode(NODES[run.nodeIndex], run.bloodline) : null;
+  function resume() {
+    const current = store.get();
+    if (!current.run) return;
+    clearOverlays();
+    setEnding(null);
+    if (current.run.duel) {
+      setDuelKey((key) => key + 1);
+      setScreen("duel");
+    } else setScreen("map");
+  }
+
+  function toTitle() {
+    clearOverlays();
+    setEnding(null);
+    setScreen("title");
+  }
+
+  function startOver() {
+    wipeSave();
+    store.set(emptySave());
+    clearOverlays();
+    setEnding(null);
+    setPops([]);
+    setToast(null);
+    setScreen("title");
+  }
+
+  function winDuel() {
+    const before = store.get();
+    const climb = before.run;
+    if (!climb) return;
+    const node = nodeAt(climb.nodeIndex);
+    const { save: after, reward, finished } = clearStage(before);
+    store.set(after);
+    setPanels([]);
+    const parts = [`Stage +${reward.stage}`];
+    if (reward.flawless) parts.push(`Flawless +${reward.flawless}`);
+    if (reward.throne) parts.push(`Crown +${reward.throne}`);
+    const gold = `${parts.join(" · ")} gold. Your purse holds ${after.gold}.`;
+    const cleared = fillLine(STORY.stageClear[node.id], { bloodline: climb.bloodline, gold: after.gold });
+
+    if (finished) {
+      setEnding({
+        finished,
+        victory: true,
+        line: randomLine(STORY.rebirth.victory),
+        unlockedBefore: before.unlocked,
+        unlockedAfter: after.unlocked,
+      });
+      setScreen("rebirth");
+      say({ tone: "clear", title: `${node.place} falls`, lines: [cleared, gold] });
+      return;
+    }
+
+    setScreen("map");
+    pop(reward.total);
+    const ahead = nodeAt(climb.nodeIndex + 1);
+    const foe = STORY.enemies[enemyOf(climb.nodeIndex + 1, climb.bloodline)];
+    say({
+      tone: "clear",
+      title: `${node.place} cleared`,
+      lines: [cleared, gold, `Next: ${foe.name} waits at ${ahead.place}.`],
+    });
+  }
+
+  function loseDuel() {
+    const before = store.get();
+    const { save: after, finished } = fallClimb(before);
+    store.set(after);
+    setPanels([]);
+    if (!finished) {
+      setScreen("title");
+      return;
+    }
+    setEnding({
+      finished,
+      victory: false,
+      line: randomLine(STORY.rebirth.defeat),
+      unlockedBefore: before.unlocked,
+      unlockedAfter: after.unlocked,
+    });
+    setScreen("rebirth");
+  }
+
+  // ——— The map talks to us through the bridge ———
+
+  const onWorld = useEffectEvent((event: WorldEvent) => {
+    const current = store.get();
+    const climb = current.run;
+    switch (event.type) {
+      case "ready":
+        setReady(true);
+        return;
+      case "step":
+        store.set(placePlayer(current, { x: event.x, y: event.y, facing: event.facing }));
+        return;
+      case "encounter": {
+        if (!climb || climb.nodeIndex !== event.node || screen !== "map" || overlay) return;
+        store.set(beginDuel(current));
+        setToast(null);
+        setDuelKey((key) => key + 1);
+        setScreen("duel");
+        return;
+      }
+      case "talk": {
+        const story = STORY.npcs[event.npc];
+        const visit = visitNpc(current, event.npc, story.lines.length);
+        store.set(visit.save);
+        const egg: EggId | undefined =
+          event.npc === "duck" ? "rubber-duck" : event.npc === "ghost" ? "git-blame" : undefined;
+        say({
+          tone: "npc",
+          speaker: story.name,
+          portrait: event.npc,
+          lines: [fill(story.lines[visit.line] ?? "…")],
+          then: event.shop ? "shop" : undefined,
+          egg: egg && !current.secrets.includes(egg) ? egg : undefined,
+        });
+        return;
+      }
+      case "sign": {
+        const [heading = "", ...rest] = STORY.signs[event.sign] ?? [];
+        say({
+          tone: "sign",
+          title: heading,
+          lines: (rest.length ? rest : [heading]).map(fill),
+          egg: event.sign === "hello-world" && !current.secrets.includes("hello-world") ? "hello-world" : undefined,
+        });
+        return;
+      }
+      case "chest": {
+        if (!climb) return;
+        const result = openChest(current, event.chest, hash(`${climb.id}:${event.chest}`));
+        if (result.gold <= 0) return;
+        store.set(result.save);
+        pop(result.gold);
+        note(`Chest opened: +${result.gold} gold`, "coin");
+        return;
+      }
+      case "secret":
+        grant(event.egg);
+        return;
+      case "asleep": {
+        if (!climb) return;
+        const sleeper = STORY.enemies[enemyOf(event.node, climb.bloodline)].name;
+        const awake = STORY.enemies[enemyOf(climb.nodeIndex, climb.bloodline)].name;
+        note(`${sleeper} sleeps until ${awake} falls.`);
+        return;
+      }
+      case "water":
+        if (jokes.current.has("water")) return;
+        jokes.current.add("water");
+        note("The sea is out of scope for this release.");
+        return;
+    }
+  });
+
+  useEffect(() => {
+    bridge.onEvent((event) => onWorld(event));
+    return () => bridge.onEvent(() => {});
+  }, [bridge]);
+
+  // ——— Typed secrets ———
+
+  const onSequence = useEffectEvent((id: SequenceId) => {
+    const walking = screen === "map" && !overlay;
+    if (id === "konami") {
+      if (screen !== "duel") grant("konami");
+    } else if (id === "sudo") {
+      if (walking && !grant("sudo")) note("You are already in the sudoers file. This incident will not be reported.");
+    } else if (id === "ls" && walking) {
+      note(NODE_IDS.map((node) => `${node}/`).join("  "));
+    }
+  });
+
+  useEffect(() => {
+    const watch = new SequenceWatch();
+    const listener = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      const token = sequenceToken(event);
+      if (!token) return;
+      // X and Z are this game's B and A buttons, so the touch pad can enter the old code too.
+      const pressed = token === "x" ? "b" : token === "z" ? "a" : token;
+      for (const id of watch.push(pressed)) onSequence(id);
+    };
+    window.addEventListener("keydown", listener, { capture: true });
+    return () => window.removeEventListener("keydown", listener, { capture: true });
+  }, []);
+
+  // ——— Walking ———
+
+  useKeyLayer(
+    LAYER.SCREEN,
+    (event) => {
+      const dir = walkOf(event);
+      if (dir) {
+        bridge.input.press(dir);
+        return true;
+      }
+      if (isConfirm(event)) {
+        if (!event.repeat) bridge.input.confirm();
+        return true;
+      }
+      if (isMenu(event)) {
+        if (!event.repeat) openPause();
+        return true;
+      }
+      if (event.key === "i" || event.key === "I") {
+        if (!event.repeat) open({ kind: "satchel" });
+        return true;
+      }
+      return false;
+    },
+    { enabled: onMap && !overlay },
+  );
+
+  useKeyUp((event) => {
+    if (event.key === "*") {
+      bridge.input.clear();
+      return;
+    }
+    const dir = walkOf(event);
+    if (dir) bridge.input.release(dir);
+  });
+
+  // ——— Panels ———
+
+  function confirmCopy(action: ConfirmAction, bloodline: number): { title: string; body: string } {
+    const numeral = STORY.chapter(bloodline).numeral;
+    if (action === "wipe") {
+      return {
+        title: "Start over?",
+        body: "This erases the whole save: gold, gear, unlocked Bloodlines, the Codex, and every secret. There is no undo.",
+      };
+    }
+    if (action === "restart") {
+      return {
+        title: `Restart Bloodline ${numeral}?`,
+        body: "This climb ends here and a fresh one begins on the shore. Your gold, gear, Codex, and secrets stay.",
+      };
+    }
+    return {
+      title: "Abandon the climb in progress?",
+      body: `A new climb of Bloodline ${numeral} begins on the shore. Your gold, gear, Codex, and secrets stay.`,
+    };
+  }
+
+  function renderPanel(state: PanelState) {
+    switch (state.kind) {
+      case "pause":
+        return (
+          <Pause
+            save={save}
+            inDuel={screen === "duel"}
+            cursor={pauseAt}
+            onCursor={setPauseAt}
+            onResume={close}
+            onSatchel={() => open({ kind: "satchel" })}
+            onShop={() => open({ kind: "shop" })}
+            onCodex={() => open({ kind: "codex" })}
+            onSecrets={() => open({ kind: "secrets" })}
+            onControls={() => open({ kind: "controls", first: false })}
+            onRestart={() => {
+              const climb = store.get().run;
+              if (climb) open({ kind: "confirm", action: "restart", bloodline: climb.bloodline });
+            }}
+            onTitle={toTitle}
+            onStartOver={() => open({ kind: "confirm", action: "wipe", bloodline: 1 })}
+          />
+        );
+      case "shop":
+        return (
+          <Shop
+            store={store}
+            onClose={(farewell) => {
+              close();
+              if (farewell) note(`${STORY.npcs.merchant.name}: “${farewell}”`);
+            }}
+          />
+        );
+      case "satchel":
+        return <Satchel store={store} onClose={close} />;
+      case "codex":
+        return <Codex save={save} onClose={close} />;
+      case "secrets":
+        return <Secrets save={save} onClose={close} />;
+      case "controls":
+        return <Controls first={state.first} onClose={close} />;
+      case "confirm": {
+        const copy = confirmCopy(state.action, state.bloodline);
+        return (
+          <Confirm
+            title={copy.title}
+            body={copy.body}
+            yes={CONFIRM_YES[state.action]}
+            onNo={close}
+            onYes={() => (state.action === "wipe" ? startOver() : beginClimb(state.bloodline))}
+          />
+        );
+      }
+    }
+  }
 
   return (
-    <main className="shell">
-      <header className="top">
-        <div>
-          <p className="kicker">Bloodline</p>
-          <strong>The interview castle</strong>
-        </div>
-        <div className="top-meta">
-          <span>{save.gold} gold</span>
-          {run && screen !== "select" && screen !== "rebirth" && (
-            <span>
-              {BLOODLINE_COPY[run.bloodline].title}
-              {screen === "map" || screen === "duel" || screen === "feedback"
-                ? ` · ${run.gold} this climb`
-                : ""}
-            </span>
-          )}
-          {screen !== "codex" && (
-            <button className="text-btn" onClick={() => open("codex", screen)}>
-              Codex
-            </button>
-          )}
-        </div>
-      </header>
+    <main className={`game screen-${screen}`}>
+      <Overworld bridge={bridge} hidden={!onMap} />
 
-      {screen === "select" && (
-        <section className="panel wide">
-          <h1>Climb until the throne, then climb again.</h1>
-          <p className="lede">
-            Seven duels stand between the shore and the crown. A correct answer takes one of their
-            hearts. A miss gives them one of yours. Fall or take the throne, and you are reborn into
-            a harder Bloodline with the same route and the gear you kept. You can always walk an
-            earlier Bloodline again.
-          </p>
-          <div className="blood-grid">
-            {([1, 2, 3] as Bloodline[]).map((bloodline) => {
-              const locked = bloodline > save.unlocked;
-              const copy = BLOODLINE_COPY[bloodline];
-              return (
-                <article key={bloodline} className={locked ? "blood locked" : "blood"}>
-                  <h2>{copy.title}</h2>
-                  <p>{copy.blurb}</p>
-                  <p>{copy.east}</p>
-                  <button className="btn gold" disabled={locked} onClick={() => startClimb(bloodline)}>
-                    {locked ? "Locked" : "Enter the map"}
-                  </button>
-                </article>
-              );
-            })}
-          </div>
-          <div className="row spread">
-            <button className="btn stone" onClick={() => open("armory", "select")}>
-              Armory
-            </button>
-            <button className="btn stone" onClick={() => open("codex", "select")}>
-              Review the codex
-            </button>
-          </div>
-        </section>
+      {screen === "title" && (
+        <Title
+          save={save}
+          enabled={!overlay}
+          onContinue={resume}
+          onStart={(bloodline) =>
+            store.get().run ? open({ kind: "confirm", action: "abandon", bloodline }) : beginClimb(bloodline)
+          }
+          onCodex={() => open({ kind: "codex" })}
+          onSecrets={() => open({ kind: "secrets" })}
+          onControls={() => open({ kind: "controls", first: false })}
+          onStartOver={() => open({ kind: "confirm", action: "wipe", bloodline: 1 })}
+        />
       )}
 
-      {screen === "map" && run && node && (
-        <section className="panel wide">
-          <div className="map-copy">
-            <div>
-              <p className="kicker">{node.place}</p>
-              <h1>{node.name}</h1>
-              <p>{node.line}</p>
+      {onMap && (
+        <>
+          <Hud
+            save={save}
+            pops={pops}
+            onPopDone={(id) => setPops((list) => list.filter((item) => item.id !== id))}
+            onMenu={openPause}
+          />
+          {!ready && (
+            <div className="world-loading" role="status">
+              <p>Raising the castle…</p>
             </div>
-            <Hearts label="You" value={run.playerHearts} max={run.playerMax} />
-          </div>
-          <CastleMap nodeIndex={run.nodeIndex} bloodline={run.bloodline} onEngage={engage} />
-          <ol className="route">
-            {NODES.map((item, index) => {
-              const view = presentNode(item, run.bloodline);
-              const state = index < run.nodeIndex ? "Down" : index === run.nodeIndex ? "Now" : "Ahead";
-              return (
-                <li key={item.id} className={state === "Now" ? "now" : ""}>
-                  <span>{state}</span>
-                  {view.place} — {view.name}
-                </li>
-              );
-            })}
-          </ol>
-          <button className="btn gold" onClick={engage}>
-            Face {node.name}
-          </button>
-          <p className="fine">Enter works too. Only the next enemy on the path will meet you.</p>
-        </section>
-      )}
-
-      {screen === "duel" && run && node && run.challenge && (
-        <section className="panel duel">
-          <div className="duel-head">
-            <div>
-              <p className="kicker">{node.place}</p>
-              <h1>{node.name}</h1>
-              <Hearts label="You" value={run.playerHearts} max={run.playerMax} />
-            </div>
-            <Figure role={NODES[run.nodeIndex].role} />
-            <div className="enemy-side">
-              <Hearts label="Enemy" value={run.enemyHearts} max={run.enemyMax} />
-              <p className={`timer ${remain <= 5 ? "hot" : ""}`}>{remain}s</p>
-              {run.shieldLeft && <p className="fine">Shield ready</p>}
-            </div>
-          </div>
-          <article className="parchment">
-            <p className="prompt">{run.challenge.prompt}</p>
-            {hintOn && <p className="hint">Hint: {run.challenge.hint}</p>}
-            {hintOn && save.gear.codexLens && (
-              <p className="hint">Principle: {run.challenge.principle}</p>
-            )}
-            {seniorOn && <p className="hint">Senior: {run.challenge.senior}</p>}
-            <ChallengeView
-              key={run.challenge.id}
-              challenge={run.challenge}
-              eliminated={eliminated}
-              onAnswer={resolve}
-            />
-          </article>
-          <div className="row">
-            <button className="btn stone" disabled={hintOn || run.lifelines.hint <= 0} onClick={useHint}>
-              Hint ({run.lifelines.hint})
-            </button>
-            <button className="btn stone" disabled={run.lifelines.time <= 0} onClick={useTime}>
-              Extra time ({run.lifelines.time})
-            </button>
-            <button className="btn stone" disabled={run.lifelines.senior <= 0} onClick={useSenior}>
-              Ask a senior ({run.lifelines.senior})
-            </button>
-          </div>
-        </section>
-      )}
-
-      {screen === "feedback" && run?.challenge && banner && (
-        <section className="panel">
-          <p className={`kicker tone-${banner.tone}`}>{banner.title}</p>
-          <h1>{run.challenge.principle}</h1>
-          <p className="lede">{run.challenge.reveal}</p>
-          <p>{run.challenge.why}</p>
-          <Hearts label="You" value={Math.max(0, run.playerHearts)} max={run.playerMax} />
-          <button className="btn gold" onClick={continueFromFeedback}>
-            {banner.dead || banner.victory ? "Be reborn" : banner.slain ? "Back to the map" : "Next question"}
-          </button>
-        </section>
-      )}
-
-      {screen === "rebirth" && run && (
-        <section className="panel">
-          <p className="kicker">{victory ? "The crown is yours" : "Reborn"}</p>
-          <h1>
-            {victory
-              ? `Bloodline ${run.bloodline} ends on the throne.`
-              : `Bloodline ${run.bloodline} ends in the dust.`}
-          </h1>
-          <p className="lede">
-            {victory && run.bloodline === 3
-              ? "The Crown Examiner falls. Any Bloodline you have earned stays open, and the gear still fits."
-              : "The route does not change. The questions do. Gold from this climb is in the armory, and the next Bloodline is open if you have not walked it yet."}
-          </p>
-          <p>You banked {run.gold} gold. The codex kept what you missed.</p>
-          <div className="row">
-            <button className="btn gold" onClick={() => setScreen("select")}>
-              Choose a Bloodline
-            </button>
-            <button className="btn stone" onClick={() => open("armory", "rebirth")}>
-              Armory
-            </button>
-          </div>
-        </section>
-      )}
-
-      {screen === "armory" && (
-        <section className="panel wide">
-          <p className="kicker">Armory</p>
-          <h1>{save.gold} gold</h1>
-          <p className="lede">
-            Gear is worn at the start of the next climb. Higher Bloodlines are where a shield and a
-            spare heart change the fight.
-          </p>
-          {save.gold === 0 && !Object.values(save.gear).some(Boolean) && (
-            <p>Slay an enemy to earn gold. The rack is empty until then.</p>
           )}
-          <ul className="shop">
-            {GEAR_COPY.map((item) => {
-              const owned = save.gear[item.key];
-              const price = PRICES[item.key];
-              return (
-                <li key={item.key}>
-                  <div>
-                    <strong>{item.name}</strong>
-                    <p>{item.line}</p>
-                  </div>
-                  <button className="btn gold" disabled={owned || save.gold < price} onClick={() => buy(item.key)}>
-                    {owned ? "Worn" : `${price} gold`}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-          <button className="btn stone" onClick={closeOverlay}>
-            Return
-          </button>
-        </section>
-      )}
-
-      {screen === "codex" && (
-        <section className="panel wide">
-          <p className="kicker">Codex</p>
-          <h1>What the castle already taught you</h1>
-          {save.codex.length === 0 ? (
-            <p className="lede">
-              Nothing is written here yet. Misses from a duel are kept, with the principle and the
-              reason an interviewer cares.
+          {toast && (
+            <p key={toast.id} className={`toast ${toast.tone ?? ""}`} role="status">
+              {toast.icon && <Icon id={toast.icon} scale={1} />}
+              <span>{toast.text}</span>
             </p>
-          ) : (
-            <ul className="codex">
-              {save.codex.map((entry) => (
-                <li key={entry.id}>
-                  <p className="kicker">
-                    Bloodline {entry.bloodline} · {entry.principle}
-                  </p>
-                  <p>{entry.prompt}</p>
-                  <p>
-                    <strong>{entry.reveal}</strong>
-                  </p>
-                  <p>{entry.why}</p>
-                </li>
-              ))}
-            </ul>
           )}
-          <button className="btn stone" onClick={closeOverlay}>
-            Return
-          </button>
-        </section>
+        </>
       )}
+
+      {screen === "duel" && run?.duel && (
+        <Duel
+          key={duelKey}
+          store={store}
+          paused={overlay}
+          onWin={winDuel}
+          onLose={loseDuel}
+          onMenu={openPause}
+          onSatchel={() => open({ kind: "satchel" })}
+          onEggs={(eggs) => eggs.forEach((egg) => say(eggTalk(egg)))}
+        />
+      )}
+
+      {screen === "rebirth" && ending && (
+        <Rebirth save={save} ending={ending} enabled={!overlay} onClimb={beginClimb} onTitle={toTitle} />
+      )}
+
+      {panel && <div key={`${panels.length}:${panel.kind}`}>{renderPanel(panel)}</div>}
+
+      {talk && (
+        <div className={`talk-layer ${talk.veil ? "veiled" : ""}`}>
+          <Dialog
+            key={talk.id}
+            lines={talk.lines}
+            tone={talk.tone}
+            title={talk.title}
+            speaker={talk.speaker}
+            portrait={talk.portrait ? ART.npcPortrait[talk.portrait] : undefined}
+            onDone={() => finishTalk(talk)}
+            footer={
+              talk.then === "shop" ? <p className="dialog-hint">Z to see the wares</p> : undefined
+            }
+          />
+        </div>
+      )}
+
+      {(onMap || screen === "duel") && <TouchPad />}
     </main>
   );
-}
-
-function Hearts({ label, value, max }: { label: string; value: number; max: number }) {
-  return (
-    <p className="hearts" aria-label={`${label}: ${value} of ${max} hearts`}>
-      <span>{label}</span>
-      {Array.from({ length: max }, (_, index) => (
-        <i key={index} className={index < value ? "full" : "empty"}>
-          {index < value ? "♥" : "♡"}
-        </i>
-      ))}
-    </p>
-  );
-}
-
-function Figure({ role }: { role: string }) {
-  return <div className={`figure role-${role}`} aria-hidden="true" />;
 }
