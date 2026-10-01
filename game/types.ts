@@ -1,16 +1,23 @@
-export type Bloodline = 1 | 2 | 3;
+import type { EggId, NpcId } from "./contracts";
+
+/** Any whole number >= 1. */
+export type Bloodline = number;
+
+/** Authored content exists for tiers 1-3. Later Bloodlines draw from these. */
+export type Tier = 1 | 2 | 3;
 
 export type Role = "algo" | "system" | "craft" | "puzzle" | "specialist" | "boss";
 
 export type Topic = "algo" | "system" | "craft" | "specialist";
 
-export type Gear = {
-  armor: boolean;
-  shield: boolean;
-  codexLens: boolean;
-  hourglass: boolean;
-  mentorSeal: boolean;
-};
+export const GEAR_IDS = ["armor", "shield", "lens", "hourglass", "seal"] as const;
+export type GearId = (typeof GEAR_IDS)[number];
+
+export const CONSUMABLE_IDS = ["potion", "scroll", "sand", "note"] as const;
+export type ConsumableId = (typeof CONSUMABLE_IDS)[number];
+
+export type GearTiers = Record<GearId, number>;
+export type Satchel = Record<ConsumableId, number>;
 
 export type CodexEntry = {
   id: string;
@@ -19,156 +26,149 @@ export type CodexEntry = {
   why: string;
   principle: string;
   topic: Topic | "boss";
-  bloodline: Bloodline;
+  bloodline: number;
   at: number;
 };
 
-export type Save = {
-  version: 1;
-  gold: number;
-  gear: Gear;
-  unlocked: Bloodline;
-  codex: CodexEntry[];
-  lastSeen: string[];
+type Lesson = {
+  id: string;
+  /** Content tier while authored; the climb's Bloodline once presented. */
+  bloodline: number;
+  prompt: string;
+  hint: string;
+  senior: string;
+  principle: string;
+  why: string;
+  reveal: string;
+  /** Seconds a calm Bloodline I player needs. The timer scales from this. */
+  par?: number;
 };
 
-export type Mcq = {
+export type Mcq = Lesson & {
   kind: "mcq";
-  id: string;
   topic: Topic | "boss";
   seat?: Topic;
-  bloodline: Bloodline;
-  prompt: string;
   options: string[];
   answer: number;
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type StackChallenge = {
+export type StackChallenge = Lesson & {
   kind: "stack";
-  id: string;
   topic: "algo";
-  bloodline: Bloodline;
   structure: "stack" | "queue";
-  prompt: string;
   ops: { op: "push" | "pop"; value?: number }[];
   answer: number[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type FloodChallenge = {
+export type FloodChallenge = Lesson & {
   kind: "flood";
-  id: string;
   topic: "algo";
-  bloodline: Bloodline;
-  prompt: string;
   cols: number;
   rows: number;
   walls: number[];
   start: number;
   order: number[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
 export type Bucket = "O(1)" | "O(n)" | "O(n²)";
 
-export type ComplexityChallenge = {
+export type ComplexityChallenge = Lesson & {
   kind: "complexity";
-  id: string;
   topic: "algo";
-  bloodline: Bloodline;
-  prompt: string;
   snippets: { id: string; code: string; bucket: Bucket }[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type BoxChallenge = {
+export type BoxChallenge = Lesson & {
   kind: "box";
-  id: string;
   topic: "system";
-  bloodline: Bloodline;
-  prompt: string;
   cards: { id: string; label: string; detail: string }[];
   answer: string;
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type LatencyChallenge = {
+export type LatencyChallenge = Lesson & {
   kind: "latency";
-  id: string;
   topic: "specialist";
-  bloodline: Bloodline;
-  prompt: string;
   items: { id: string; label: string; onPath: boolean }[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type PipelineChallenge = {
+export type PipelineChallenge = Lesson & {
   kind: "pipeline";
-  id: string;
   topic: "specialist";
-  bloodline: Bloodline;
-  prompt: string;
   stages: string[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type ContextChallenge = {
+export type ContextChallenge = Lesson & {
   kind: "context";
-  id: string;
   topic: "specialist";
-  bloodline: Bloodline;
-  prompt: string;
   groups: string[];
   items: { id: string; label: string; group: string }[];
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
 };
 
-export type ModelChallenge = {
+export type ModelChallenge = Lesson & {
   kind: "model";
-  id: string;
   topic: "specialist";
-  bloodline: Bloodline;
-  prompt: string;
   options: string[];
   answer: number;
-  hint: string;
-  senior: string;
-  principle: string;
-  why: string;
-  reveal: string;
+};
+
+/** Two pointers walk a sorted row inward until their sum hits the target. */
+export type PointerChallenge = Lesson & {
+  kind: "pointers";
+  topic: "algo";
+  values: number[];
+  target: number;
+  pair: [number, number];
+  /** Moves the two-pointer walk needs from the ends. */
+  steps: number;
+  /** Wrong-way moves forgiven before the duel counts a miss. */
+  stumbles: number;
+};
+
+/** Find a hidden number in 1..max with at most `guesses` probes. */
+export type BinaryChallenge = Lesson & {
+  kind: "bsearch";
+  topic: "algo";
+  max: number;
+  secret: number;
+  guesses: number;
+};
+
+/** Close what is still open, newest first. */
+export type BracketChallenge = Lesson & {
+  kind: "brackets";
+  topic: "algo";
+  tokens: string[];
+  answer: string[];
+};
+
+/** Reach the exit in exactly the breadth-first shortest number of steps. */
+export type MazeChallenge = Lesson & {
+  kind: "maze";
+  topic: "algo";
+  cols: number;
+  rows: number;
+  walls: number[];
+  start: number;
+  exit: number;
+  shortest: number;
+};
+
+/** Sort with adjacent swaps under a budget. */
+export type SwapChallenge = Lesson & {
+  kind: "swaps";
+  topic: "algo";
+  values: number[];
+  inversions: number;
+  budget: number;
+};
+
+/** Serve requests through a small cache and evict the least recently used key. */
+export type LruChallenge = Lesson & {
+  kind: "lru";
+  topic: "system";
+  capacity: number;
+  requests: string[];
+  stumbles: number;
 };
 
 export type Challenge =
@@ -180,7 +180,17 @@ export type Challenge =
   | LatencyChallenge
   | PipelineChallenge
   | ContextChallenge
-  | ModelChallenge;
+  | ModelChallenge
+  | PointerChallenge
+  | BinaryChallenge
+  | BracketChallenge
+  | MazeChallenge
+  | SwapChallenge
+  | LruChallenge;
+
+export type ChallengeKind = Challenge["kind"];
+
+export type MiniGameKind = "pointers" | "bsearch" | "brackets" | "maze" | "swaps" | "lru";
 
 export type Lifelines = {
   hint: number;
@@ -188,16 +198,54 @@ export type Lifelines = {
   senior: number;
 };
 
-export type Run = {
-  bloodline: Bloodline;
-  nodeIndex: number;
-  playerHearts: number;
-  playerMax: number;
+export type Facing = "up" | "down" | "left" | "right";
+
+export type DuelState = {
   enemyHearts: number;
   enemyMax: number;
-  gold: number;
+  /** The shield is still ready to block a miss in this duel. */
+  shield: boolean;
+  misses: number;
+  hits: number;
+  /** Boss seats already asked, so the throne mixes algorithms, systems, and craft. */
+  seats: Topic[];
+};
+
+export type Run = {
+  id: string;
+  bloodline: number;
+  /** The next node to fight. Equal to the route length once the throne falls. */
+  nodeIndex: number;
+  hearts: number;
+  maxHearts: number;
   lifelines: Lifelines;
-  shieldLeft: boolean;
+  /** Gold earned during this climb. It is already in the purse. */
+  gold: number;
   usedIds: string[];
-  challenge: Challenge | null;
+  chests: string[];
+  pos: { x: number; y: number; facing: Facing } | null;
+  duel: DuelState | null;
+  answers: number;
+  correct: number;
+};
+
+export type Save = {
+  version: 2;
+  gold: number;
+  gear: GearTiers;
+  satchel: Satchel;
+  /** Highest Bloodline that can be climbed. */
+  unlocked: number;
+  /** The Bloodline the selector opens on. */
+  lastBloodline: number;
+  run: Run | null;
+  secrets: EggId[];
+  /** Every answer given, across every climb. */
+  answers: number;
+  codex: CodexEntry[];
+  /** Challenge ids from the previous climb, avoided in the next. */
+  lastSeen: string[];
+  npcVisits: Partial<Record<NpcId, number>>;
+  seen: { prologue: boolean; controls: boolean };
+  stats: { climbs: number; thrones: number; best: number; earned: number };
 };

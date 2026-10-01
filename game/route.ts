@@ -1,84 +1,47 @@
-import type { Bloodline, Role } from "./types";
+import { enemyAt, NODE_IDS, type EnemyId, type NodeId } from "./contracts";
+import type { Role } from "./types";
 
 export type NodeDef = {
-  id: string;
+  id: NodeId;
   role: Role;
-  name: string;
+  /** A short label for the place on the route. */
   place: string;
-  line: string;
 };
 
-export const NODES: NodeDef[] = [
-  {
-    id: "foothills",
-    role: "algo",
-    name: "Foothill Sentinel",
-    place: "The Foothills",
-    line: "Arrays, hash maps, and the structures you reach for first.",
-  },
-  {
-    id: "gate",
-    role: "algo",
-    name: "Gate Warden",
-    place: "The Gate",
-    line: "Stacks, queues, and a trace you can do by hand.",
-  },
-  {
-    id: "yard",
-    role: "system",
-    name: "The Architect",
-    place: "The Yard",
-    line: "A tradeoff. The algorithm underneath is the real answer.",
-  },
-  {
-    id: "stair",
-    role: "craft",
-    name: "The Refactorer",
-    place: "The Stair",
-    line: "Names, tests, and the cost of a mess you leave behind.",
-  },
-  {
-    id: "west",
-    role: "puzzle",
-    name: "The Puzzlewright",
-    place: "West Tower",
-    line: "Run the algorithm. A lucky letter will not save you.",
-  },
-  {
-    id: "east",
-    role: "specialist",
-    name: "East Tower",
-    place: "East Tower",
-    line: "",
-  },
-  {
-    id: "throne",
-    role: "boss",
-    name: "The Crown Examiner",
-    place: "The Throne",
-    line: "A trace, a design tradeoff, and a bug in a few lines.",
-  },
-];
+const ROLES: Record<NodeId, Role> = {
+  foothills: "algo",
+  gate: "algo",
+  yard: "system",
+  stair: "craft",
+  west: "puzzle",
+  east: "specialist",
+  throne: "boss",
+};
 
-export function presentNode(node: NodeDef, bloodline: Bloodline): NodeDef {
-  if (node.role !== "specialist") return node;
-  if (bloodline === 1) {
-    return {
-      ...node,
-      name: "Lady Latency",
-      line: "First paint, page weight, and the boundary of a component.",
-    };
-  }
-  if (bloodline === 2) {
-    return {
-      ...node,
-      name: "The Shipwright",
-      line: "Pipelines, probes, and the daily work of getting a change out.",
-    };
-  }
-  return {
-    ...node,
-    name: "The Cartographer",
-    line: "Where one word means two things, and what a model may claim.",
-  };
+const PLACES: Record<NodeId, string> = {
+  foothills: "The Shore",
+  gate: "The Gate",
+  yard: "The Yard",
+  stair: "The Stair",
+  west: "West Tower",
+  east: "East Tower",
+  throne: "The Throne",
+};
+
+export const NODES: NodeDef[] = NODE_IDS.map((id) => ({ id, role: ROLES[id], place: PLACES[id] }));
+
+export const ROUTE_LENGTH = NODES.length;
+
+export function nodeAt(index: number): NodeDef {
+  return NODES[Math.max(0, Math.min(NODES.length - 1, index))];
+}
+
+export function enemyOf(index: number, bloodline: number): EnemyId {
+  return enemyAt(nodeAt(index).id, bloodline);
+}
+
+/** East tower content follows its rotating specialist, not the difficulty tier. */
+export function specialistTier(bloodline: number): 1 | 2 | 3 {
+  const n = Math.max(1, Math.floor(bloodline));
+  return (((n - 1) % 3) + 1) as 1 | 2 | 3;
 }
