@@ -183,7 +183,6 @@ export function Title({
           return {
             id: seat,
             label,
-            detail: `Five levels of ${label.toLowerCase()}`,
             aside: (
               <span className="path-progress">
                 {cleared}/{LEVEL_COUNT}

@@ -844,10 +844,12 @@ kbd {
 .title-card {
   position: relative;
   width: min(600px, 100%);
+  max-height: min(92dvh, 880px);
   margin: auto;
   display: grid;
   gap: 12px;
   padding: 22px 22px 18px;
+  overflow: auto;
   text-align: center;
   color: var(--parchment);
   background: rgba(11, 19, 36, 0.88);
