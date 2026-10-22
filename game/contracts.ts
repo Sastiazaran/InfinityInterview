@@ -246,6 +246,9 @@ export type ArtModule = {
   /** Bloodlines I–III use the base palette; each later age of three Bloodlines swaps palettes. */
   enemyPortrait: (id: EnemyId, bloodline: number) => Sprite;
   enemyOverworld: (id: EnemyId, bloodline: number) => Sprite;
+  /** The same guardians in a fixed palette age (0 to 3), for topic paths that dress their castle. */
+  enemyPortraitAt: (id: EnemyId, age: number) => Sprite;
+  enemyOverworldAt: (id: EnemyId, age: number) => Sprite;
   playerOverworld: Sprite;
   playerBattle: Sprite;
   npcOverworld: Record<NpcId, Sprite>;
