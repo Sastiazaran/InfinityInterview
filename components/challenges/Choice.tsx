@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { BoxChallenge, Mcq, ModelChallenge } from "@/game/types";
 import { arrowOf, digitOf, isConfirm, LAYER, useKeyLayer, wrapIndex } from "@/components/keys";
+import { inlineCode } from "@/components/ui/PromptText";
 import { Legend, type ChallengeProps } from "./shared";
 
 const CROSSED = "A senior crossed this out.";
@@ -57,7 +58,7 @@ export function ChoiceView({ challenge, active, eliminated, onAnswer }: Challeng
               onClick={() => pick(index)}
             >
               <kbd>{index + 1}</kbd>
-              <span>{gone ? CROSSED : option}</span>
+              <span>{gone ? CROSSED : inlineCode(option)}</span>
             </button>
           );
         })}

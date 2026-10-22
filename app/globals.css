@@ -994,6 +994,69 @@ kbd {
   border-radius: 999px;
 }
 
+.path-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.path-icon {
+  width: 24px !important;
+  height: 36px !important;
+}
+
+.path-progress {
+  display: inline-block;
+  min-width: 2.6em;
+  padding: 1px 7px;
+  font: 0.8rem var(--pixel);
+  text-align: center;
+  color: var(--gold-hi);
+  border: 2px solid var(--gold-deep);
+  border-radius: 999px;
+}
+
+.selector-focus {
+  max-width: 32rem;
+  margin: 0;
+  color: var(--parchment);
+}
+
+.level-track {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.level-pip {
+  width: 34px;
+  height: 34px;
+  font: 700 0.95rem var(--pixel);
+  color: var(--parchment);
+  background: rgba(244, 231, 207, 0.06);
+  border: 2px solid var(--gold-deep);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.level-pip.cleared {
+  color: var(--ink);
+  background: var(--gold);
+  border-color: var(--gold-hi);
+}
+
+.level-pip.locked {
+  opacity: 0.35;
+  cursor: default;
+  border-style: dashed;
+}
+
+.level-pip.on {
+  outline: 3px solid var(--gold-hi);
+  outline-offset: 2px;
+}
+
 .rebirth-head {
   margin: 0;
   font: 700 clamp(1.7rem, 5.5vw, 2.6rem) / 1.1 var(--pixel);
@@ -1280,6 +1343,34 @@ kbd {
   line-height: 1.45;
   white-space: pre-wrap;
   user-select: text;
+}
+
+.duel-prompt p,
+.codex-prompt p {
+  margin: 0;
+}
+
+.duel-prompt > * + *,
+.codex-prompt > * + * {
+  margin-top: 6px;
+}
+
+.duel-prompt code,
+.codex-prompt code,
+.choice code {
+  font: 0.92em var(--code);
+}
+
+.prompt-code {
+  margin: 0;
+  padding: 6px 10px;
+  overflow-x: auto;
+  font: 500 0.82em/1.45 var(--code);
+  white-space: pre;
+  color: var(--parch-hi);
+  background: var(--ink-soft);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
 }
 
 .duel-card {

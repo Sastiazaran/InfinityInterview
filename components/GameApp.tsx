@@ -6,10 +6,13 @@ import { EGGS, fillLine, NODE_IDS, type EggId, type IconId, type NpcId } from "@
 import { STORY } from "@/game/story";
 import { awardEgg, beginDuel, clearStage, fallClimb, newRun, openChest, placePlayer, visitNpc } from "@/game/engine";
 import { SequenceWatch, sequenceToken, type SequenceId } from "@/game/eggs";
+import { chapterOf, climbName, guardianAt, mentorLines, placeAt, signAt, stageClearAt, stepName } from "@/game/climb";
+import { PATHS } from "@/game/paths";
+import { progressMark } from "@/game/paths/progress";
 import { hash } from "@/game/rng";
-import { enemyOf, nodeAt } from "@/game/route";
+import { nodeAt } from "@/game/route";
 import { emptySave, loadSave, wipeSave, writeSave } from "@/game/save";
-import type { Save } from "@/game/types";
+import type { PathId, Save } from "@/game/types";
 import { WorldBridge, type WorldEvent } from "@/game/world/bridge";
 import { START } from "@/game/world/map";
 import { Duel } from "./duel/Duel";
@@ -24,7 +27,7 @@ import { Rebirth, type Ending } from "./screens/Rebirth";
 import { Satchel } from "./screens/Satchel";
 import { Secrets } from "./screens/Secrets";
 import { Shop } from "./screens/Shop";
-import { Title } from "./screens/Title";
+import { Title, type TitleMode } from "./screens/Title";
 import { TouchPad } from "./screens/TouchPad";
 import { Store, useStore } from "./store";
 import { Dialog, type DialogTone } from "./ui/Dialog";
@@ -41,7 +44,7 @@ type PanelState =
   | { kind: "codex" }
   | { kind: "secrets" }
   | { kind: "controls"; first: boolean }
-  | { kind: "confirm"; action: ConfirmAction; bloodline: number };
+  | { kind: "confirm"; action: ConfirmAction; step: number; path: PathId | null; track: string | null };
 
 type Talk = {
   id: number;
@@ -82,6 +85,7 @@ export function GameApp() {
   const [bridge] = useState(() => new WorldBridge());
   const save = useStore(store);
   const [screen, setScreen] = useState<Screen>("title");
+  const [titleMode, setTitleMode] = useState<TitleMode>("menu");
   const [panels, setPanels] = useState<PanelState[]>([]);
   const [talks, setTalks] = useState<Talk[]>([]);
   const [toast, setToast] = useState<Toast | null>(null);
@@ -103,6 +107,7 @@ export function GameApp() {
   useEffect(() => {
     bridge.set({
       climbId: run?.id ?? null,
+      path: run?.path ?? null,
       bloodline: run?.bloodline ?? 1,
       nodeIndex: run?.nodeIndex ?? 0,
       chests: run?.chests ?? [],
@@ -174,35 +179,32 @@ export function GameApp() {
 
   // ——— The climb ———
 
-  function beginClimb(bloodline: number) {
+  function beginClimb(step: number, path: PathId | null, track: string | null = null) {
     const before = store.get();
-    const started = newRun(before, bloodline, climbId());
+    const started = newRun(before, step, climbId(), path, track);
     const climb = started.run;
     if (!climb) return;
     const prologue = !started.seen.prologue;
     const controls = !started.seen.controls;
+    const prior = path ? before.paths[path] : null;
+    const firstOnPath =
+      Boolean(prior) && prior!.climbs === 0 && Object.values(prior!.tracks).every((item) => item.climbs === 0);
+    const castle = firstOnPath && path ? PATHS[path] : null;
     store.set({ ...started, seen: { prologue: true, controls: true } });
     jokes.current.clear();
     setEnding(null);
     setPops([]);
-    setTalks(
-      prologue
-        ? [
-            {
-              id: nextId(),
-              tone: "info",
-              title: STORY.title,
-              lines: STORY.prologue.map(fill),
-              veil: true,
-              then: controls ? "controls" : undefined,
-            },
-          ]
-        : [],
-    );
-    setPanels(!prologue && controls ? [{ kind: "controls", first: true }] : []);
+    const intro: Talk[] = [];
+    if (prologue) {
+      intro.push({ id: nextId(), tone: "info", title: STORY.title, lines: STORY.prologue.map(fill), veil: true });
+    }
+    if (castle) intro.push({ id: nextId(), tone: "info", title: castle.castle, lines: castle.prologue, veil: true });
+    if (controls && intro.length) intro[intro.length - 1].then = "controls";
+    setTalks(intro);
+    setPanels(!intro.length && controls ? [{ kind: "controls", first: true }] : []);
     setScreen("map");
-    const chapter = STORY.chapter(climb.bloodline);
-    setToast({ id: nextId(), text: `Bloodline ${chapter.numeral} · ${chapter.title}`, tone: "chapter" });
+    const chapter = chapterOf(climb);
+    setToast({ id: nextId(), text: `${chapter.name} · ${chapter.title}`, tone: "chapter" });
   }
 
   function resume() {
@@ -216,9 +218,10 @@ export function GameApp() {
     } else setScreen("map");
   }
 
-  function toTitle() {
+  function toTitle(mode: TitleMode = "menu") {
     clearOverlays();
     setEnding(null);
+    setTitleMode(mode);
     setScreen("title");
   }
 
@@ -228,6 +231,7 @@ export function GameApp() {
     clearOverlays();
     setEnding(null);
     setPops([]);
+    setTitleMode("menu");
     setScreen("title");
   }
 
@@ -236,6 +240,7 @@ export function GameApp() {
     const climb = before.run;
     if (!climb) return;
     const node = nodeAt(climb.nodeIndex);
+    const place = placeAt(climb, climb.nodeIndex);
     const { save: after, reward, finished } = clearStage(before);
     store.set(after);
     setPanels([]);
@@ -243,29 +248,28 @@ export function GameApp() {
     if (reward.flawless) parts.push(`Flawless +${reward.flawless}`);
     if (reward.throne) parts.push(`Crown +${reward.throne}`);
     const gold = `${parts.join(" · ")} gold. Your purse holds ${after.gold}.`;
-    const cleared = fillLine(STORY.stageClear[node.id], { bloodline: climb.bloodline, gold: after.gold });
+    const cleared = fillLine(stageClearAt(climb, node.id), { bloodline: climb.bloodline, gold: after.gold });
 
     if (finished) {
       setEnding({
         finished,
         victory: true,
         line: randomLine(STORY.rebirth.victory),
-        unlockedBefore: before.unlocked,
-        unlockedAfter: after.unlocked,
+        unlockedBefore: progressMark(before, climb.path, climb.track),
+        unlockedAfter: progressMark(after, climb.path, climb.track),
       });
       setScreen("rebirth");
-      say({ tone: "clear", title: `${node.place} falls`, lines: [cleared, gold] });
+      say({ tone: "clear", title: `${place} falls`, lines: [cleared, gold] });
       return;
     }
 
     setScreen("map");
     pop(reward.total);
-    const ahead = nodeAt(climb.nodeIndex + 1);
-    const foe = STORY.enemies[enemyOf(climb.nodeIndex + 1, climb.bloodline)];
+    const foe = guardianAt(climb, climb.nodeIndex + 1).story;
     say({
       tone: "clear",
-      title: `${node.place} cleared`,
-      lines: [cleared, gold, `Next: ${foe.name} waits at ${ahead.place}.`],
+      title: `${place} cleared`,
+      lines: [cleared, gold, `Next: ${foe.name} waits at ${placeAt(climb, climb.nodeIndex + 1)}.`],
     });
   }
 
@@ -282,8 +286,8 @@ export function GameApp() {
       finished,
       victory: false,
       line: randomLine(STORY.rebirth.defeat),
-      unlockedBefore: before.unlocked,
-      unlockedAfter: after.unlocked,
+      unlockedBefore: progressMark(before, finished.path, finished.track),
+      unlockedAfter: progressMark(after, finished.path, finished.track),
     });
     setScreen("rebirth");
   }
@@ -310,7 +314,8 @@ export function GameApp() {
       }
       case "talk": {
         const story = STORY.npcs[event.npc];
-        const visit = visitNpc(current, event.npc, story.lines.length);
+        const lines = event.npc === "mentor" ? mentorLines(climb?.path ?? null) : story.lines;
+        const visit = visitNpc(current, event.npc, lines.length);
         store.set(visit.save);
         const egg: EggId | undefined =
           event.npc === "duck" ? "rubber-duck" : event.npc === "ghost" ? "git-blame" : undefined;
@@ -318,14 +323,14 @@ export function GameApp() {
           tone: "npc",
           speaker: story.name,
           portrait: event.npc,
-          lines: [fill(story.lines[visit.line] ?? "…")],
+          lines: [fill(lines[visit.line] ?? "…")],
           then: event.shop ? "shop" : undefined,
           egg: egg && !current.secrets.includes(egg) ? egg : undefined,
         });
         return;
       }
       case "sign": {
-        const [heading = "", ...rest] = STORY.signs[event.sign] ?? [];
+        const [heading = "", ...rest] = signAt(climb?.path ?? null, event.sign);
         say({
           tone: "sign",
           title: heading,
@@ -348,8 +353,8 @@ export function GameApp() {
         return;
       case "asleep": {
         if (!climb) return;
-        const sleeper = STORY.enemies[enemyOf(event.node, climb.bloodline)].name;
-        const awake = STORY.enemies[enemyOf(climb.nodeIndex, climb.bloodline)].name;
+        const sleeper = guardianAt(climb, event.node).story.name;
+        const awake = guardianAt(climb, climb.nodeIndex).story.name;
         note(`${sleeper} sleeps until ${awake} falls.`);
         return;
       }
@@ -431,23 +436,28 @@ export function GameApp() {
 
   // ——— Panels ———
 
-  function confirmCopy(action: ConfirmAction, bloodline: number): { title: string; body: string } {
-    const numeral = STORY.chapter(bloodline).numeral;
+  function confirmCopy(
+    action: ConfirmAction,
+    step: number,
+    path: PathId | null,
+    track: string | null,
+  ): { title: string; body: string } {
+    const target = climbName({ path, bloodline: step, track });
     if (action === "wipe") {
       return {
         title: "Start over?",
-        body: "This erases the whole save: gold, gear, unlocked Bloodlines, the Codex, and every secret. There is no undo.",
+        body: "This erases the whole save: gold, gear, unlocked Bloodlines and levels, the Codex, and every secret. There is no undo.",
       };
     }
     if (action === "restart") {
       return {
-        title: `Restart Bloodline ${numeral}?`,
+        title: `Restart ${stepName(path, step)}?`,
         body: "This climb ends here and a fresh one begins on the shore. Your gold, gear, Codex, and secrets stay.",
       };
     }
     return {
       title: "Abandon the climb in progress?",
-      body: `A new climb of Bloodline ${numeral} begins on the shore. Your gold, gear, Codex, and secrets stay.`,
+      body: `A new climb of ${target} begins on the shore. Your gold, gear, Codex, and secrets stay.`,
     };
   }
 
@@ -468,10 +478,18 @@ export function GameApp() {
             onControls={() => open({ kind: "controls", first: false })}
             onRestart={() => {
               const climb = store.get().run;
-              if (climb) open({ kind: "confirm", action: "restart", bloodline: climb.bloodline });
+              if (climb) {
+                open({
+                  kind: "confirm",
+                  action: "restart",
+                  step: climb.bloodline,
+                  path: climb.path,
+                  track: climb.track,
+                });
+              }
             }}
-            onTitle={toTitle}
-            onStartOver={() => open({ kind: "confirm", action: "wipe", bloodline: 1 })}
+            onTitle={() => toTitle()}
+            onStartOver={() => open({ kind: "confirm", action: "wipe", step: 1, path: null, track: null })}
           />
         );
       case "shop":
@@ -493,14 +511,14 @@ export function GameApp() {
       case "controls":
         return <Controls first={state.first} onClose={close} />;
       case "confirm": {
-        const copy = confirmCopy(state.action, state.bloodline);
+        const copy = confirmCopy(state.action, state.step, state.path, state.track);
         return (
           <Confirm
             title={copy.title}
             body={copy.body}
             yes={CONFIRM_YES[state.action]}
             onNo={close}
-            onYes={() => (state.action === "wipe" ? startOver() : beginClimb(state.bloodline))}
+            onYes={() => (state.action === "wipe" ? startOver() : beginClimb(state.step, state.path, state.track))}
           />
         );
       }
@@ -515,14 +533,17 @@ export function GameApp() {
         <Title
           save={save}
           enabled={!overlay}
+          initialMode={titleMode}
           onContinue={resume}
-          onStart={(bloodline) =>
-            store.get().run ? open({ kind: "confirm", action: "abandon", bloodline }) : beginClimb(bloodline)
+          onStart={(step, path, track) =>
+            store.get().run
+              ? open({ kind: "confirm", action: "abandon", step, path, track: track ?? null })
+              : beginClimb(step, path, track ?? null)
           }
           onCodex={() => open({ kind: "codex" })}
           onSecrets={() => open({ kind: "secrets" })}
           onControls={() => open({ kind: "controls", first: false })}
-          onStartOver={() => open({ kind: "confirm", action: "wipe", bloodline: 1 })}
+          onStartOver={() => open({ kind: "confirm", action: "wipe", step: 1, path: null, track: null })}
         />
       )}
 
@@ -570,7 +591,15 @@ export function GameApp() {
       )}
 
       {screen === "rebirth" && ending && (
-        <Rebirth save={save} ending={ending} enabled={!overlay} onClimb={beginClimb} onTitle={toTitle} />
+        <Rebirth
+          save={save}
+          ending={ending}
+          enabled={!overlay}
+          onClimb={beginClimb}
+          onPaths={() => toTitle("paths")}
+          onTracks={ending.finished.path && PATHS[ending.finished.path].pickTracks ? () => toTitle("tracks") : undefined}
+          onTitle={() => toTitle()}
+        />
       )}
 
       {panel && <div key={`${panels.length}:${panel.kind}`}>{renderPanel(panel)}</div>}

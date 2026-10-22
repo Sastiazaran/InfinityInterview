@@ -1,9 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { stepName } from "@/game/climb";
 import { toRoman } from "@/game/contracts";
-import type { Save } from "@/game/types";
+import { isPathId, PATHS } from "@/game/paths";
+import type { CodexEntry, Save } from "@/game/types";
 import { arrowOf, isBack, isMenu, LAYER, useKeyLayer, wrapIndex } from "@/components/keys";
+import { inlineCode, PromptText } from "@/components/ui/PromptText";
 import { KeyHint, Panel } from "./Panel";
 
 const TOPIC: Record<string, string> = {
@@ -13,6 +16,18 @@ const TOPIC: Record<string, string> = {
   specialist: "Specialist",
   boss: "Throne",
 };
+
+function filedUnder(entry: CodexEntry): string {
+  return isPathId(entry.topic) ? PATHS[entry.topic].name : (TOPIC[entry.topic] ?? entry.topic);
+}
+
+function shortStep(entry: CodexEntry): string {
+  return isPathId(entry.topic) ? `Lv ${entry.bloodline}` : toRoman(entry.bloodline);
+}
+
+function stepOf(entry: CodexEntry): string {
+  return stepName(isPathId(entry.topic) ? entry.topic : null, entry.bloodline);
+}
 
 export function Codex({ save, onClose }: { save: Save; onClose: () => void }) {
   const entries = save.codex;
@@ -68,7 +83,7 @@ export function Codex({ save, onClose }: { save: Save; onClose: () => void }) {
                   onClick={() => setCursor(index)}
                 >
                   <small>
-                    {TOPIC[item.topic] ?? item.topic} · {toRoman(item.bloodline)}
+                    {filedUnder(item)} · {shortStep(item)}
                   </small>
                   {item.principle}
                 </button>
@@ -78,15 +93,15 @@ export function Codex({ save, onClose }: { save: Save; onClose: () => void }) {
           {entry && (
             <article className="codex-entry">
               <p className="duel-kind">
-                {TOPIC[entry.topic] ?? entry.topic} · Bloodline {toRoman(entry.bloodline)} · {at + 1}/{entries.length}
+                {filedUnder(entry)} · {stepOf(entry)} · {at + 1}/{entries.length}
               </p>
               <h3>{entry.principle}</h3>
-              <p className="codex-prompt">{entry.prompt}</p>
+              <PromptText className="codex-prompt" text={entry.prompt} />
               <dl className="lesson">
                 <dt>Answer</dt>
-                <dd>{entry.reveal}</dd>
+                <dd>{inlineCode(entry.reveal)}</dd>
                 <dt>Why it matters</dt>
-                <dd>{entry.why}</dd>
+                <dd>{inlineCode(entry.why)}</dd>
               </dl>
             </article>
           )}

@@ -1,8 +1,8 @@
 import Phaser from "phaser";
 import { ART } from "@/game/art";
 import type { EggId, Sprite } from "@/game/contracts";
-import { enemyOf } from "@/game/route";
-import type { Facing } from "@/game/types";
+import { guardianAt } from "@/game/climb";
+import type { Facing, PathId } from "@/game/types";
 import type { WorldBridge } from "@/game/world/bridge";
 import {
   CHESTS,
@@ -127,6 +127,7 @@ class WorldScene extends Phaser.Scene {
   private sawInactive = false;
   private wasActive = false;
   private climbId: string | null = null;
+  private path: PathId | null = null;
   private bloodline = 0;
   private nodeIndex = -1;
   private staticSolid = new Set<string>();
@@ -269,7 +270,12 @@ class WorldScene extends Phaser.Scene {
 
   private sync() {
     const snap = this.bridge.snapshot;
-    if (snap.climbId && (snap.climbId !== this.climbId || snap.bloodline !== this.bloodline || snap.nodeIndex < this.nodeIndex)) {
+    const moved =
+      snap.climbId !== this.climbId ||
+      snap.path !== this.path ||
+      snap.bloodline !== this.bloodline ||
+      snap.nodeIndex < this.nodeIndex;
+    if (snap.climbId && moved) {
       this.resetClimb();
     } else if (snap.climbId && snap.nodeIndex > this.nodeIndex) {
       this.advance(snap.nodeIndex);
@@ -291,6 +297,7 @@ class WorldScene extends Phaser.Scene {
   private resetClimb() {
     const snap = this.bridge.snapshot;
     this.climbId = snap.climbId;
+    this.path = snap.path;
     this.bloodline = snap.bloodline;
     this.nodeIndex = snap.nodeIndex;
     this.locked = false;
@@ -310,7 +317,8 @@ class WorldScene extends Phaser.Scene {
 
     for (const spot of ENEMY_SPOTS) {
       if (spot.node < this.nodeIndex) continue;
-      const sprite = ART.enemyOverworld(enemyOf(spot.node, this.bloodline), this.bloodline);
+      const guardian = guardianAt({ path: this.path, bloodline: this.bloodline }, spot.node);
+      const sprite = ART.enemyOverworldAt(guardian.look, guardian.age);
       const image = this.add
         .image(spot.x * TILE, (spot.y + 1) * TILE, this.tex(sprite, "down0"))
         .setOrigin(0, 1)

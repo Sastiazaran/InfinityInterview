@@ -1,6 +1,7 @@
 "use client";
 
-import { EGG_IDS, toRoman } from "@/game/contracts";
+import { EGG_IDS } from "@/game/contracts";
+import { chapterOf, climbName } from "@/game/climb";
 import { STORY } from "@/game/story";
 import type { Save } from "@/game/types";
 import { isMenu, LAYER, useKeyLayer } from "@/components/keys";
@@ -39,7 +40,7 @@ export function Pause({
   onStartOver: () => void;
 }) {
   const run = save.run;
-  const chapter = run ? STORY.chapter(run.bloodline) : null;
+  const chapter = run ? chapterOf(run) : null;
 
   useKeyLayer(
     LAYER.PANEL + 1,
@@ -68,7 +69,7 @@ export function Pause({
     >
       {chapter && run && (
         <p className="pause-sub">
-          Bloodline {chapter.numeral}: {chapter.title} · {run.hearts}/{run.maxHearts} hearts · {save.gold} gold
+          {chapter.name}: {chapter.title} · {run.hearts}/{run.maxHearts} hearts · {save.gold} gold
         </p>
       )}
       <Menu
@@ -97,8 +98,8 @@ export function Pause({
           { id: "controls", label: "Controls", icon: <Icon id="key" scale={1} />, onSelect: onControls },
           {
             id: "restart",
-            label: "Restart this Bloodline",
-            detail: run ? `A fresh climb of Bloodline ${toRoman(run.bloodline)}` : undefined,
+            label: run?.path ? "Restart this level" : "Restart this Bloodline",
+            detail: run ? `A fresh climb of ${climbName(run)}` : undefined,
             disabled: !run,
             onSelect: onRestart,
           },
