@@ -474,7 +474,8 @@ const MIX: Partial<Record<NodeId, ChallengeKind[]>> = {
   throne: ["maze", "pointers", "brackets", "bsearch", "swaps", "lru"],
 };
 
-function generate(kind: ChallengeKind, n: number, salt: number, used: Set<string>): Challenge {
+/** Builds a puzzle of one kind, sized for the Bloodline or path level. */
+export function generatePuzzle(kind: ChallengeKind, n: number, salt: number, used: Set<string>): Challenge {
   switch (kind) {
     case "pointers":
       return makePointers(n, salt);
@@ -533,7 +534,7 @@ export function nextChallenge(input: NextInput): Challenge {
 
   if (input.role === "puzzle") {
     const offset = ((n - 1) * 2) % WEST_ROTATION.length;
-    return generate(WEST_ROTATION[(offset + input.asked) % WEST_ROTATION.length], n, input.salt, used);
+    return generatePuzzle(WEST_ROTATION[(offset + input.asked) % WEST_ROTATION.length], n, input.salt, used);
   }
 
   if (input.role === "specialist") {
@@ -541,19 +542,19 @@ export function nextChallenge(input: NextInput): Challenge {
     const authored: ChallengeKind[] =
       tier === 1 ? ["latency"] : tier === 2 ? ["pipeline"] : ["context", "model"];
     const next = authored.find((kind) => {
-      const probe = generate(kind, n, input.salt, used);
+      const probe = generatePuzzle(kind, n, input.salt, used);
       return !used.has(probe.id);
     });
-    if (next && (input.asked === 0 || rng() < 0.35)) return generate(next, n, input.salt, used);
+    if (next && (input.asked === 0 || rng() < 0.35)) return generatePuzzle(next, n, input.salt, used);
     const mcq = chooseMcq("specialist", tier, used, avoid, rng);
     if (mcq) return present(mcq, n, rng);
-    return generate(pick(rng, ["lru", "pointers", "maze"] as ChallengeKind[]), n, input.salt, used);
+    return generatePuzzle(pick(rng, ["lru", "pointers", "maze"] as ChallengeKind[]), n, input.salt, used);
   }
 
   const mixes = MIX[input.node] ?? [];
   const onboarding = n === 1 && input.asked === 0;
   if (mixes.length && !onboarding && rng() < mixChance(n)) {
-    return generate(pick(rng, mixes), n, input.salt, used);
+    return generatePuzzle(pick(rng, mixes), n, input.salt, used);
   }
 
   const tier = contentTier(n, rng);
@@ -567,5 +568,5 @@ export function nextChallenge(input: NextInput): Challenge {
     const mcq = chooseMcq(topic, tier, used, avoid, rng);
     if (mcq) return present(mcq, n, rng);
   }
-  return generate(pick(rng, mixes.length ? mixes : WEST_ROTATION), n, input.salt, used);
+  return generatePuzzle(pick(rng, mixes.length ? mixes : WEST_ROTATION), n, input.salt, used);
 }

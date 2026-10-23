@@ -679,7 +679,11 @@ function examinerHalo(ctx: Ctx, age: number, frame: Expression) {
 const portraitCache = new Map<string, Sprite>();
 
 export function enemyPortrait(id: EnemyId, bloodline: number): Sprite {
-  const age = paletteAge(bloodline);
+  return enemyPortraitAt(id, paletteAge(bloodline));
+}
+
+/** A guardian portrait in one palette age, for looks that do not follow the Bloodline. */
+export function enemyPortraitAt(id: EnemyId, age: number): Sprite {
   const key = `${id}:${age}`;
   const cached = portraitCache.get(key);
   if (cached) return cached;
@@ -1053,7 +1057,10 @@ const OW_LOOK: Record<EnemyId, { metal: Quad; cloth: Quad; accent: Quad; hair: Q
 const overworldCache = new Map<string, Sprite>();
 
 export function enemyOverworld(id: EnemyId, bloodline: number): Sprite {
-  const age = paletteAge(bloodline);
+  return enemyOverworldAt(id, paletteAge(bloodline));
+}
+
+export function enemyOverworldAt(id: EnemyId, age: number): Sprite {
   const key = `${id}:${age}`;
   const cached = overworldCache.get(key);
   if (cached) return cached;

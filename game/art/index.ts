@@ -1,6 +1,6 @@
 import type { ArtModule, Sprite } from "@/game/contracts";
 import { backdrops } from "./backdrops";
-import { enemyOverworld, enemyPortrait } from "./enemies";
+import { enemyOverworld, enemyOverworldAt, enemyPortrait, enemyPortraitAt } from "./enemies";
 import { icons } from "./icons";
 import { npcOverworld, npcPortrait } from "./npcs";
 import { objects } from "./objects";
@@ -73,6 +73,8 @@ export function spriteURL(sprite: Sprite, frame: string, scale = 1): string {
 export const ART: ArtModule = {
   enemyPortrait,
   enemyOverworld,
+  enemyPortraitAt,
+  enemyOverworldAt,
   playerOverworld,
   playerBattle,
   npcOverworld,

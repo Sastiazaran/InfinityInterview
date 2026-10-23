@@ -10,6 +10,17 @@ export type Role = "algo" | "system" | "craft" | "puzzle" | "specialist" | "boss
 
 export type Topic = "algo" | "system" | "craft" | "specialist";
 
+/** Topic paths a climb can follow. Each id has a definition in game/paths. */
+export const PATH_IDS = ["algorithms", "system-design", "sql", "practices"] as const;
+export type PathId = (typeof PATH_IDS)[number];
+
+/** Every topic path has this many levels. Level 1 is fundamentals, the last is a senior interview. */
+export const LEVEL_COUNT = 5;
+export type Level = 1 | 2 | 3 | 4 | 5;
+
+/** What a lesson is filed under in the Codex: a classic topic, the throne, or a topic path. */
+export type LessonTopic = Topic | "boss" | PathId;
+
 export const GEAR_IDS = ["armor", "shield", "lens", "hourglass", "seal"] as const;
 export type GearId = (typeof GEAR_IDS)[number];
 
@@ -25,7 +36,8 @@ export type CodexEntry = {
   reveal: string;
   why: string;
   principle: string;
-  topic: Topic | "boss";
+  topic: LessonTopic;
+  /** The Bloodline, or the level when the lesson came from a topic path. */
   bloodline: number;
   at: number;
 };
@@ -42,11 +54,13 @@ type Lesson = {
   reveal: string;
   /** Seconds a calm Bloodline I player needs. The timer scales from this. */
   par?: number;
+  /** Replaces the kind's name above the prompt, for authored puzzles that reuse a generic board. */
+  label?: string;
 };
 
 export type Mcq = Lesson & {
   kind: "mcq";
-  topic: Topic | "boss";
+  topic: LessonTopic;
   seat?: Topic;
   options: string[];
   answer: number;
@@ -80,26 +94,31 @@ export type ComplexityChallenge = Lesson & {
 
 export type BoxChallenge = Lesson & {
   kind: "box";
-  topic: "system";
+  topic: "system" | PathId;
   cards: { id: string; label: string; detail: string }[];
   answer: string;
 };
 
+/** Mark the items that belong; leave the rest unmarked. */
 export type LatencyChallenge = Lesson & {
   kind: "latency";
-  topic: "specialist";
+  topic: "specialist" | PathId;
   items: { id: string; label: string; onPath: boolean }[];
+  /** How a marked and an unmarked item read. Defaults to the critical-path wording. */
+  marks?: [string, string];
 };
 
+/** Put every step in order. */
 export type PipelineChallenge = Lesson & {
   kind: "pipeline";
-  topic: "specialist";
+  topic: "specialist" | PathId;
   stages: string[];
 };
 
+/** Sort every item into one of two groups. */
 export type ContextChallenge = Lesson & {
   kind: "context";
-  topic: "specialist";
+  topic: "specialist" | PathId;
   groups: string[];
   items: { id: string; label: string; group: string }[];
 };
@@ -211,8 +230,22 @@ export type DuelState = {
   seats: Topic[];
 };
 
+/** The mixed track on a path that lets the climber pick a subtopic. */
+export const MIX_TRACK = "mix";
+
 export type Run = {
   id: string;
+  /** The topic path this climb follows, or null for the classic mixed Bloodline climb. */
+  path: PathId | null;
+  /**
+   * A subtopic seat on a path that offers tracks, or null for the mixed climb
+   * (every seat) and for paths that have no tracks.
+   */
+  track: string | null;
+  /**
+   * The difficulty step that balance reads: the Bloodline on a classic climb,
+   * the level (1 to LEVEL_COUNT) on a topic path.
+   */
   bloodline: number;
   /** The next node to fight. Equal to the route length once the throne falls. */
   nodeIndex: number;
@@ -248,4 +281,24 @@ export type Save = {
   npcVisits: Partial<Record<NpcId, number>>;
   seen: { prologue: boolean; controls: boolean };
   stats: { climbs: number; thrones: number; best: number; earned: number };
+  /** Progress on each topic path. */
+  paths: Record<PathId, PathProgress>;
+  /** The path the title selector opens on; null is the classic Bloodline climb. */
+  lastPath: PathId | null;
+};
+
+export type TrackProgress = {
+  /** Highest level whose throne has fallen. The next level is open. */
+  cleared: number;
+  /** The level the selector opens on. */
+  last: number;
+  /** Climbs started on this track. */
+  climbs: number;
+};
+
+export type PathProgress = TrackProgress & {
+  /** Last chosen subtopic seat, or null for the mixed climb. */
+  lastTrack: string | null;
+  /** Per-subtopic progress on paths that offer tracks. The mixed climb uses the fields above. */
+  tracks: Record<string, TrackProgress>;
 };

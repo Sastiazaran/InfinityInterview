@@ -314,8 +314,11 @@ export function ComplexityView({ challenge, active, onAnswer }: ChallengeProps<C
 
 // ——— Critical rendering path ———
 
+const FIRST_PAINT: [string, string] = ["Blocks first paint", "Can wait"];
+
 export function LatencyView({ challenge, active, onAnswer }: ChallengeProps<LatencyChallenge>) {
   const items = challenge.items;
+  const [marked, unmarked] = challenge.marks ?? FIRST_PAINT;
   const [cursor, setCursor] = useState(0);
   const [onPath, setOnPath] = useState<string[]>([]);
 
@@ -375,7 +378,7 @@ export function LatencyView({ challenge, active, onAnswer }: ChallengeProps<Late
               }}
             >
               <kbd>{index + 1}</kbd>
-              <span className="toggle-state">{on ? "Blocks first paint" : "Can wait"}</span>
+              <span className="toggle-state">{on ? marked : unmarked}</span>
               <span>{item.label}</span>
             </button>
           );
@@ -389,7 +392,7 @@ export function LatencyView({ challenge, active, onAnswer }: ChallengeProps<Late
         onMouseEnter={() => setCursor(items.length)}
         onClick={commit}
       >
-        Commit the path
+        {challenge.marks ? "Commit the marks" : "Commit the path"}
       </button>
       <Legend
         keys={[
@@ -590,7 +593,13 @@ export function ContextView({ challenge, active, onAnswer }: ChallengeProps<Cont
         onMouseEnter={() => setCursor(items.length)}
         onClick={commit}
       >
-        {ready ? "Commit the contexts" : "Sort every noun first"}
+        {challenge.label
+          ? ready
+            ? "Commit the sort"
+            : "Sort every item first"
+          : ready
+            ? "Commit the contexts"
+            : "Sort every noun first"}
       </button>
       <Legend
         keys={[

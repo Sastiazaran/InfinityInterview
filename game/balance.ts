@@ -30,11 +30,39 @@ export function contentTier(bloodline: number, rng: Rng): Tier {
   return 1;
 }
 
-export function enemyHeartCount(bloodline: number, role: Role): number {
+export function enemyHeartCount(bloodline: number, role: Role, onPath = false): number {
+  if (onPath) return pathHeartCount(bloodline, role);
   const n = wholeBloodline(bloodline);
   const base = n <= 3 ? n + 1 : Math.min(9, 4 + Math.floor((n - 3) / 2));
   if (role !== "boss") return base;
   return base + (n >= 4 ? 2 : 1);
+}
+
+// ——— Topic path levels ———
+
+/** Guardian hearts by level. A path's question bank is finite, so the curve is gentler than a Bloodline's. */
+const PATH_HEARTS = [2, 2, 3, 3, 4] as const;
+
+export function wholeLevel(value: number): number {
+  return Math.min(PATH_HEARTS.length, wholeBloodline(value));
+}
+
+function pathHeartCount(level: number, role: Role): number {
+  const base = PATH_HEARTS[wholeLevel(level) - 1];
+  return role === "boss" ? base + 1 : base;
+}
+
+/** Seconds for a path question by level. Hard levels ask longer questions, so the clock shrinks slowly. */
+const PATH_RECALL = [45, 40, 36, 33, 30] as const;
+
+/** Plain facts about a path level for the selector. */
+export function levelFacts(level: number): string[] {
+  const n = wholeLevel(level);
+  return [
+    `Guardians hold ${pathHeartCount(n, "algo")} hearts, the throne ${pathHeartCount(n, "boss")}`,
+    `${secondsFor("mcq", n, undefined, true)}s to answer`,
+    `${freeHints(n)} free hint${freeHints(n) === 1 ? "" : "s"}`,
+  ];
 }
 
 export const BASE_HEARTS = 3;
@@ -88,9 +116,10 @@ function puzzlePace(n: number): number {
   return Math.max(0.6, 1 - 0.06 * (n - 1));
 }
 
-export function secondsFor(kind: ChallengeKind, bloodline: number, par?: number): number {
+export function secondsFor(kind: ChallengeKind, bloodline: number, par?: number, onPath = false): number {
   const n = wholeBloodline(bloodline);
   if (kind === "mcq" || kind === "model" || kind === "box") {
+    if (onPath) return PATH_RECALL[wholeLevel(n) - 1];
     return Math.max(12, Math.round(BASE_SECONDS[kind] * recallPace(n)));
   }
   const base = par ?? BASE_SECONDS[kind];

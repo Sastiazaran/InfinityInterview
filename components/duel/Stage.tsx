@@ -1,7 +1,7 @@
 "use client";
 
 import { ART } from "@/game/art";
-import { backdropAt, toRoman, type EnemyId, type NodeId } from "@/game/contracts";
+import { backdropAt, type EnemyId, type NodeId } from "@/game/contracts";
 import { SpriteCanvas } from "@/components/art/SpriteCanvas";
 import { Coin, Hearts, Icon } from "@/components/ui/Sprites";
 
@@ -9,8 +9,10 @@ export type DuelFx = { kind: "hit" | "miss" | "block" | "slain" | "fallen"; id: 
 
 export function Stage({
   node,
-  enemyId,
-  bloodline,
+  look,
+  age,
+  badge,
+  heir,
   name,
   title,
   enemyHearts,
@@ -25,8 +27,13 @@ export function Stage({
   pop,
 }: {
   node: NodeId;
-  enemyId: EnemyId;
-  bloodline: number;
+  /** The painted guardian and the palette age it wears. */
+  look: EnemyId;
+  age: number;
+  /** Beside the guardian's name: the Bloodline numeral or the level. */
+  badge: string;
+  /** Under "Heir" on the player's plate. */
+  heir: string;
   name: string;
   title: string;
   enemyHearts: number;
@@ -41,7 +48,7 @@ export function Stage({
   blink: boolean;
   pop: { amount: number; id: number } | null;
 }) {
-  const portrait = ART.enemyPortrait(enemyId, bloodline);
+  const portrait = ART.enemyPortraitAt(look, age);
   const slain = fx?.kind === "slain";
   const fallen = fx?.kind === "fallen";
   const hit = live && fx?.kind === "hit";
@@ -82,14 +89,14 @@ export function Stage({
       )}
       <div className="plate foe-plate">
         <p className="plate-name">
-          {name} <small>{toRoman(bloodline)}</small>
+          {name} <small>{badge}</small>
         </p>
         <p className="plate-title">{title}</p>
         <Hearts current={enemyHearts} max={enemyMax} className="plate-hearts" />
       </div>
       <div className="plate hero-plate">
         <p className="plate-name">
-          Heir <small>of Bloodline {toRoman(bloodline)}</small>
+          Heir <small>{heir}</small>
         </p>
         <Hearts current={hearts} max={maxHearts} className="plate-hearts" />
         <p className="plate-meta">

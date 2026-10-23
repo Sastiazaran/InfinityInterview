@@ -14,10 +14,12 @@ import {
   startingLifelines,
   throneGold,
   wholeBloodline,
+  wholeLevel,
 } from "./balance";
+import { openLevel, progressMark } from "./paths/progress";
 import { nodeAt, ROUTE_LENGTH } from "./route";
 import { rememberMiss } from "./save";
-import type { Challenge, ConsumableId, Facing, Lifelines, Run, Save } from "./types";
+import { MIX_TRACK, type Challenge, ConsumableId, Facing, Lifelines, PathId, Run, Save } from "./types";
 
 export const FORTY_TWO = 42;
 
@@ -40,12 +42,27 @@ export function bonusGold(save: Save, amount: number): Save {
   return credit(save, Math.max(0, Math.floor(amount)));
 }
 
-export function newRun(save: Save, bloodline: number, id: string): Save {
-  const n = Math.min(wholeBloodline(bloodline), save.unlocked);
+/**
+ * Starts a climb. With a path, `step` is the level on that path, capped at the highest open level;
+ * without one, it is the Bloodline, capped at the highest unlocked.
+ */
+export function newRun(
+  save: Save,
+  step: number,
+  id: string,
+  path: PathId | null = null,
+  track: string | null = null,
+): Save {
+  const seat = path && track && track !== MIX_TRACK ? track : null;
+  const n = path
+    ? Math.min(wholeLevel(step), openLevel(save, path, seat))
+    : Math.min(wholeBloodline(step), save.unlocked);
   const maxHearts = playerHeartMax(save.gear);
   const previous = save.run?.usedIds ?? [];
   const run: Run = {
     id,
+    path,
+    track: path ? seat : null,
     bloodline: n,
     nodeIndex: 0,
     hearts: maxHearts,
@@ -59,18 +76,28 @@ export function newRun(save: Save, bloodline: number, id: string): Save {
     answers: 0,
     correct: 0,
   };
-  return {
-    ...save,
-    run,
-    lastBloodline: n,
-    lastSeen: previous.length ? previous.slice(-120) : save.lastSeen,
-  };
+  const lastSeen = previous.length ? previous.slice(-120) : save.lastSeen;
+  if (path) {
+    const progress = save.paths[path];
+    const next = seat
+      ? {
+          ...progress,
+          lastTrack: seat,
+          tracks: {
+            ...progress.tracks,
+            [seat]: { ...(progress.tracks[seat] ?? { cleared: 0, last: 1, climbs: 0 }), last: n, climbs: (progress.tracks[seat]?.climbs ?? 0) + 1 },
+          },
+        }
+      : { ...progress, lastTrack: null, last: n, climbs: progress.climbs + 1 };
+    return { ...save, run, lastPath: path, lastSeen, paths: { ...save.paths, [path]: next } };
+  }
+  return { ...save, run, lastPath: null, lastBloodline: n, lastSeen };
 }
 
 export function beginDuel(save: Save): Save {
   const run = save.run;
   if (!run || run.duel) return save;
-  const enemyMax = enemyHeartCount(run.bloodline, nodeAt(run.nodeIndex).role);
+  const enemyMax = enemyHeartCount(run.bloodline, nodeAt(run.nodeIndex).role, run.path !== null);
   return {
     ...save,
     run: {
@@ -162,7 +189,7 @@ export function answer(save: Save, challenge: Challenge, correct: boolean, now: 
       reveal: challenge.reveal,
       why: challenge.why,
       principle: challenge.principle,
-      topic: challenge.topic,
+      topic: run.path ?? challenge.topic,
       bloodline: run.bloodline,
       at: now,
     });
@@ -197,6 +224,7 @@ export type StageReward = {
   throne: number;
   total: number;
   victory: boolean;
+  /** The highest Bloodline, or on a path the highest open level, once this stage is paid. */
   unlocked: number;
 };
 
@@ -222,14 +250,14 @@ export function clearStage(save: Save): { save: Save; reward: StageReward; finis
     const done = finishClimb(next, true);
     return {
       save: done.save,
-      reward: { stage, flawless, throne, total, victory, unlocked: done.save.unlocked },
+      reward: { stage, flawless, throne, total, victory, unlocked: progressMark(done.save, run.path, run.track) },
       finished: done.finished,
     };
   }
   next = { ...next, run: { ...paid, nodeIndex: paid.nodeIndex + 1, duel: null } };
   return {
     save: next,
-    reward: { stage, flawless, throne, total, victory, unlocked: next.unlocked },
+        reward: { stage, flawless, throne, total, victory, unlocked: progressMark(next, run.path, run.track) },
     finished: null,
   };
 }
@@ -238,21 +266,44 @@ export function fallClimb(save: Save): { save: Save; finished: Run | null } {
   return finishClimb(save, false);
 }
 
+/**
+ * A classic climb opens the next Bloodline whether it is won or lost.
+ * A path climb opens the next level only when its throne falls.
+ */
 function finishClimb(save: Save, victory: boolean): { save: Save; finished: Run | null } {
   const run = save.run;
   if (!run) return { save, finished: null };
   const finished: Run = { ...run, duel: null, nodeIndex: victory ? ROUTE_LENGTH : run.nodeIndex };
+  const path = run.path;
+  const progress = path ? save.paths[path] : null;
+  const seat = run.track;
+  let paths = save.paths;
+  if (path && progress && victory) {
+    if (seat) {
+      const bucket = progress.tracks[seat] ?? { cleared: 0, last: 1, climbs: 0 };
+      paths = {
+        ...save.paths,
+        [path]: {
+          ...progress,
+          tracks: { ...progress.tracks, [seat]: { ...bucket, cleared: Math.max(bucket.cleared, run.bloodline) } },
+        },
+      };
+    } else {
+      paths = { ...save.paths, [path]: { ...progress, cleared: Math.max(progress.cleared, run.bloodline) } };
+    }
+  }
   return {
     save: {
       ...save,
       run: null,
-      unlocked: Math.max(save.unlocked, run.bloodline + 1),
+      unlocked: path ? save.unlocked : Math.max(save.unlocked, run.bloodline + 1),
+      paths,
       lastSeen: run.usedIds.slice(-120),
       stats: {
         ...save.stats,
         climbs: save.stats.climbs + 1,
         thrones: save.stats.thrones + (victory ? 1 : 0),
-        best: victory ? Math.max(save.stats.best, run.bloodline) : save.stats.best,
+        best: victory && !path ? Math.max(save.stats.best, run.bloodline) : save.stats.best,
       },
     },
     finished,

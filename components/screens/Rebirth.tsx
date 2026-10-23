@@ -1,10 +1,12 @@
 "use client";
 
 import { ART } from "@/game/art";
-import { fillLine, toRoman } from "@/game/contracts";
-import { STORY } from "@/game/story";
+import { fillLine } from "@/game/contracts";
+import { chapterOf, climbName, stepName } from "@/game/climb";
+import { PATHS } from "@/game/paths";
+import { openLevel, pathMastered } from "@/game/paths/progress";
 import { ROUTE_LENGTH } from "@/game/route";
-import type { Run, Save } from "@/game/types";
+import type { PathId, Run, Save } from "@/game/types";
 import { SpriteCanvas } from "@/components/art/SpriteCanvas";
 import { useTypewriter } from "@/components/ui/Dialog";
 import { Menu, type MenuItem } from "@/components/ui/Menu";
@@ -14,6 +16,7 @@ export type Ending = {
   finished: Run;
   victory: boolean;
   line: string;
+  /** The highest Bloodline, or on a path the highest open level, before and after the climb. */
   unlockedBefore: number;
   unlockedAfter: number;
 };
@@ -23,44 +26,64 @@ export function Rebirth({
   ending,
   enabled,
   onClimb,
+  onPaths,
+  onTracks,
   onTitle,
 }: {
   save: Save;
   ending: Ending;
   enabled: boolean;
-  onClimb: (bloodline: number) => void;
+  onClimb: (step: number, path: PathId | null, track?: string | null) => void;
+  /** Opens the topic picker. */
+  onPaths: () => void;
+  /** Opens the subtopic picker on a path that has tracks. */
+  onTracks?: () => void;
   onTitle: () => void;
 }) {
   const run = ending.finished;
+  const path = run.path;
+  const track = run.track;
   const n = run.bloodline;
-  const line = fillLine(ending.line, { bloodline: n + 1, gold: save.gold });
+  const line = fillLine(ending.line, { bloodline: path ? n : n + 1, gold: save.gold });
   const typer = useTypewriter(line, run.id);
   const felled = ending.victory ? ROUTE_LENGTH : run.nodeIndex;
   const fresh = ending.unlockedAfter > ending.unlockedBefore;
-  const next = Math.min(save.unlocked, n + 1);
+  const open = path ? openLevel(save, path, track) : save.unlocked;
+  const next = Math.min(open, n + 1);
+  const mastered = path !== null && ending.victory && pathMastered(save, path, track);
+  const pickTracks = Boolean(path && PATHS[path].pickTracks);
 
   const items: MenuItem[] = [];
   if (next > n) {
-    const chapter = STORY.chapter(next);
+    const chapter = chapterOf({ path, bloodline: next, track });
     items.push({
       id: "next",
-      label: `Climb Bloodline ${chapter.numeral}`,
+      label: `Climb ${stepName(path, next)}`,
       detail: chapter.title,
-      onSelect: () => onClimb(next),
+      onSelect: () => onClimb(next, path, track),
     });
   }
-  items.push(
-    { id: "again", label: `Climb Bloodline ${toRoman(n)} again`, detail: STORY.chapter(n).title, onSelect: () => onClimb(n) },
-    { id: "title", label: "Return to title", onSelect: onTitle },
-  );
+  items.push({
+    id: "again",
+    label: `Climb ${stepName(path, n)} again`,
+    detail: chapterOf(run).title,
+    onSelect: () => onClimb(n, path, track),
+  });
+  if (pickTracks && onTracks) {
+    items.push({ id: "tracks", label: "Choose another topic", onSelect: onTracks });
+  }
+  if (path) items.push({ id: "paths", label: pickTracks ? "Choose another path" : "Choose another topic", onSelect: onPaths });
+  items.push({ id: "title", label: "Return to title", onSelect: onTitle });
+
+  const head = ending.victory ? (path ? `${PATHS[path].name} level ${n} cleared` : "The crown is won") : "The climb ends";
 
   return (
     <section className={`rebirth ${ending.victory ? "victory" : "defeat"}`}>
       <SpriteCanvas sprite={ART.backdrops[ending.victory ? "throne" : "shore"]} className="title-bg" label="" />
       <div className="title-veil" />
       <div className="title-card rebirth-card">
-        <p className="title-kicker">Bloodline {toRoman(n)}</p>
-        <h1 className="rebirth-head">{ending.victory ? "The crown is won" : "The climb ends"}</h1>
+        <p className="title-kicker">{climbName(run)}</p>
+        <h1 className="rebirth-head">{head}</h1>
         <p className="rebirth-line">{typer.shown}</p>
         <ul className="rebirth-stats">
           <li>
@@ -73,10 +96,18 @@ export function Rebirth({
             <Coin amount={run.gold} /> earned this climb
           </li>
         </ul>
+        {mastered && (
+          <p className="unlock-banner">
+            Every level of {climbName({ path, bloodline: n, track }).replace(/ · Level \d+$/, "")} is cleared.
+          </p>
+        )}
         {fresh && (
           <p className="unlock-banner">
-            Bloodline {toRoman(ending.unlockedAfter)} unlocked: {STORY.chapter(ending.unlockedAfter).title}
+            {stepName(path, ending.unlockedAfter)} unlocked: {chapterOf({ path, bloodline: ending.unlockedAfter }).title}
           </p>
+        )}
+        {path && !ending.victory && (
+          <p className="muted small">Clear the throne of {stepName(path, n)} to unlock the next level.</p>
         )}
         <Menu items={items} enabled={enabled} label="What next" />
       </div>

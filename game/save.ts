@@ -1,15 +1,20 @@
 import { EGG_IDS, NPC_IDS, type EggId, type NpcId } from "./contracts";
-import { GEAR_MAX, playerHeartMax, wholeBloodline } from "./balance";
+import { GEAR_MAX, playerHeartMax, wholeBloodline, wholeLevel } from "./balance";
 import { ROUTE_LENGTH } from "./route";
 import {
   CONSUMABLE_IDS,
   GEAR_IDS,
+  LEVEL_COUNT,
+  PATH_IDS,
   type CodexEntry,
   type Facing,
   type GearTiers,
+  type PathId,
+  type PathProgress,
   type Run,
   type Satchel,
   type Save,
+  type TrackProgress,
 } from "./types";
 
 const KEY = "bloodline-save-v2";
@@ -22,6 +27,20 @@ export function emptyGear(): GearTiers {
 
 export function emptySatchel(): Satchel {
   return { potion: 0, scroll: 0, sand: 0, note: 0 };
+}
+
+export function emptyTrack(): TrackProgress {
+  return { cleared: 0, last: 1, climbs: 0 };
+}
+
+export function emptyPaths(): Record<PathId, PathProgress> {
+  const paths = {} as Record<PathId, PathProgress>;
+  for (const id of PATH_IDS) paths[id] = { ...emptyTrack(), lastTrack: null, tracks: {} };
+  return paths;
+}
+
+function isPath(value: unknown): value is PathId {
+  return typeof value === "string" && (PATH_IDS as readonly string[]).includes(value);
 }
 
 export function emptySave(): Save {
@@ -40,6 +59,8 @@ export function emptySave(): Save {
     npcVisits: {},
     seen: { prologue: false, controls: false },
     stats: { climbs: 0, thrones: 0, best: 0, earned: 0 },
+    paths: emptyPaths(),
+    lastPath: null,
   };
 }
 
@@ -155,7 +176,37 @@ export function normalize(input: unknown): Save {
       best: count(raw.stats?.best),
       earned: count(raw.stats?.earned),
     },
+    paths: normalizePaths(raw.paths),
+    lastPath: isPath(raw.lastPath) ? raw.lastPath : null,
   };
+}
+
+function normalizeTrack(input: Partial<TrackProgress> | undefined): TrackProgress {
+  const cleared = Math.min(LEVEL_COUNT, count(input?.cleared));
+  const open = Math.min(LEVEL_COUNT, cleared + 1);
+  return {
+    cleared,
+    last: Math.min(open, wholeLevel(count(input?.last) || 1)),
+    climbs: count(input?.climbs),
+  };
+}
+
+function normalizePaths(input: unknown): Record<PathId, PathProgress> {
+  const paths = emptyPaths();
+  if (!input || typeof input !== "object") return paths;
+  const raw = input as Partial<Record<PathId, Partial<PathProgress>>>;
+  for (const id of PATH_IDS) {
+    const item = raw[id];
+    const tracks: Record<string, TrackProgress> = {};
+    if (item?.tracks && typeof item.tracks === "object") {
+      for (const [seat, progress] of Object.entries(item.tracks)) {
+        if (typeof seat === "string" && seat.length && seat !== "mix") tracks[seat] = normalizeTrack(progress);
+      }
+    }
+    const lastTrack = typeof item?.lastTrack === "string" && item.lastTrack.length ? item.lastTrack : null;
+    paths[id] = { ...normalizeTrack(item), lastTrack, tracks };
+  }
+  return paths;
 }
 
 const FACINGS: Facing[] = ["up", "down", "left", "right"];
@@ -187,9 +238,14 @@ function normalizeRun(input: unknown, gear: GearTiers): Run | null {
           seats: Array.isArray(raw.duel.seats) ? raw.duel.seats : [],
         }
       : null;
+  const path = isPath(raw.path) ? raw.path : null;
+  const step = wholeBloodline(raw.bloodline ?? 1);
+  const track = typeof raw.track === "string" && raw.track.length ? raw.track : null;
   return {
     id: raw.id,
-    bloodline: wholeBloodline(raw.bloodline ?? 1),
+    path,
+    track: path ? track : null,
+    bloodline: path ? wholeLevel(step) : step,
     nodeIndex,
     hearts,
     maxHearts,

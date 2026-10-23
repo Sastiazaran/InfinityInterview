@@ -1,18 +1,22 @@
 "use client";
 
 import { useEffect, useEffectEvent, useState } from "react";
-import { fillLine, type EggId } from "@/game/contracts";
+import { fillLine, toRoman, type EggId } from "@/game/contracts";
+import { guardianAt, placeAt, trackName } from "@/game/climb";
+import { PATHS } from "@/game/paths";
+import { nextPathChallenge } from "@/game/paths/select";
 import { STORY } from "@/game/story";
 import { comboGold, comboLength, EXTRA_SECONDS, secondsFor } from "@/game/balance";
 import { nextChallenge } from "@/game/content/challenges";
 import { answer, bonusGold, recordChallenge, spendLifeline } from "@/game/engine";
 import { lineFrom } from "@/game/rng";
-import { enemyOf, nodeAt } from "@/game/route";
+import { nodeAt } from "@/game/route";
 import type { Challenge, Facing, Save } from "@/game/types";
 import { arrowOf, isBack, isConfirm, isMenu, LAYER, useKeyLayer } from "@/components/keys";
 import { useStore, type Store } from "@/components/store";
 import { ChallengeView, KIND_LABEL, PUZZLE_KINDS } from "@/components/challenges/ChallengeView";
 import { useTypewriter } from "@/components/ui/Dialog";
+import { inlineCode, PromptText } from "@/components/ui/PromptText";
 import { Icon } from "@/components/ui/Sprites";
 import { Stage, type DuelFx } from "./Stage";
 
@@ -82,9 +86,12 @@ export function Duel({
   const duel = run?.duel ?? null;
   const bloodline = run?.bloodline ?? 1;
   const nodeIndex = run?.nodeIndex ?? 0;
+  const path = run?.path ?? null;
   const node = nodeAt(nodeIndex);
-  const enemyId = enemyOf(nodeIndex, bloodline);
-  const story = STORY.enemies[enemyId];
+  const climb = { path, bloodline };
+  const guardian = guardianAt(climb, nodeIndex);
+  const story = guardian.story;
+  const place = placeAt(climb, nodeIndex);
   const vars = { bloodline, gold: save.gold };
 
   const [phase, setPhase] = useState<Phase>("intro");
@@ -146,18 +153,30 @@ export function Duel({
     const climb = current.run;
     if (!climb?.duel) return;
     const salt = Math.floor(Math.random() * 2147483646) + 1;
-    const next = nextChallenge({
-      bloodline: climb.bloodline,
-      node: node.id,
-      role: node.role,
-      asked: climb.duel.hits + climb.duel.misses,
-      usedIds: climb.usedIds,
-      avoid: current.lastSeen,
-      salt,
-      seats: climb.duel.seats,
-    });
+    const asked = climb.duel.hits + climb.duel.misses;
+    const next = climb.path
+      ? nextPathChallenge({
+          path: climb.path,
+          level: climb.bloodline,
+          node: node.id,
+          track: climb.track,
+          asked,
+          usedIds: climb.usedIds,
+          avoid: current.lastSeen,
+          salt,
+        })
+      : nextChallenge({
+          bloodline: climb.bloodline,
+          node: node.id,
+          role: node.role,
+          asked,
+          usedIds: climb.usedIds,
+          avoid: current.lastSeen,
+          salt,
+          seats: climb.duel.seats,
+        });
     store.set(recordChallenge(current, next));
-    const ms = secondsFor(next.kind, climb.bloodline, next.par) * 1000;
+    const ms = secondsFor(next.kind, climb.bloodline, next.par, climb.path !== null) * 1000;
     setChallenge(next);
     setLeft(ms);
     setTotal(ms);
@@ -328,8 +347,18 @@ export function Duel({
       <div className="duel-left">
         <Stage
           node={node.id}
-          enemyId={enemyId}
-          bloodline={bloodline}
+          look={guardian.look}
+          age={guardian.age}
+          badge={path ? `Lv ${bloodline}` : toRoman(bloodline)}
+          heir={
+            path
+              ? `on the ${PATHS[path].name} path${
+                  trackName(path, run.track) && trackName(path, run.track) !== "Mix"
+                    ? ` · ${trackName(path, run.track)}`
+                    : ""
+                } · Level ${bloodline}`
+              : `of Bloodline ${toRoman(bloodline)}`
+          }
           name={story.name}
           title={story.title}
           enemyHearts={duel.enemyHearts}
@@ -347,9 +376,9 @@ export function Duel({
           {phase === "ask" && challenge ? (
             <>
               <p className="duel-kind">
-                {KIND_LABEL[challenge.kind]} · {node.place}
+                {challenge.label ?? KIND_LABEL[challenge.kind]} · {place}
               </p>
-              <p className="duel-prompt">{challenge.prompt}</p>
+              <PromptText className="duel-prompt" text={challenge.prompt} />
             </>
           ) : (
             <>
@@ -371,7 +400,7 @@ export function Duel({
       <div className="duel-right">
         {phase === "intro" && (
           <div className="duel-card intro-card">
-            <p className="duel-kind">{node.place}</p>
+            <p className="duel-kind">{place}</p>
             <h2>{story.name}</h2>
             <p className="muted">{story.title}</p>
             <p>{fillLine(story.domain, vars)}</p>
@@ -406,7 +435,7 @@ export function Duel({
             {assists.map((item) => (
               <div key={item.id} className={`assist ${item.kind}`}>
                 <em>{item.flavor}</em>
-                {item.text && <p>{item.text}</p>}
+                {item.text && <p>{inlineCode(item.text)}</p>}
               </div>
             ))}
             <div className="lifelines">
@@ -456,11 +485,11 @@ export function Duel({
             </p>
             <dl className="lesson">
               <dt>Principle</dt>
-              <dd>{challenge.principle}</dd>
+              <dd>{inlineCode(challenge.principle)}</dd>
               <dt>Answer</dt>
-              <dd>{challenge.reveal}</dd>
+              <dd>{inlineCode(challenge.reveal)}</dd>
               <dt>Why it matters</dt>
-              <dd>{challenge.why}</dd>
+              <dd>{inlineCode(challenge.why)}</dd>
             </dl>
             {!outcome.correct && <p className="muted small">Written into your Codex.</p>}
             {combo && (

@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { EGG_IDS } from "@/game/contracts";
-import { STORY } from "@/game/story";
-import { enemyOf, nodeAt } from "@/game/route";
+import { chapterOf, guardianAt, placeAt } from "@/game/climb";
 import type { Save } from "@/game/types";
 import { Hearts, Icon } from "@/components/ui/Sprites";
 
@@ -46,9 +45,8 @@ export function Hud({
   const gold = useCountUp(save.gold);
   const run = save.run;
   if (!run) return null;
-  const chapter = STORY.chapter(run.bloodline);
-  const node = nodeAt(run.nodeIndex);
-  const foe = STORY.enemies[enemyOf(run.nodeIndex, run.bloodline)];
+  const chapter = chapterOf(run);
+  const foe = guardianAt(run, run.nodeIndex).story;
 
   return (
     <header className="hud">
@@ -65,7 +63,7 @@ export function Hud({
         </span>
       </div>
       <div className="hud-block hud-chapter">
-        <b>Bloodline {chapter.numeral}</b>
+        <b>{chapter.name}</b>
         <span>{chapter.title}</span>
       </div>
       <div className="hud-block hud-tools">
@@ -90,7 +88,7 @@ export function Hud({
         </button>
       </div>
       <p className="hud-goal">
-        Next: <b>{node.place}</b> · {foe.name}
+        Next: <b>{placeAt(run, run.nodeIndex)}</b> · {foe.name}
       </p>
     </header>
   );

@@ -1,5 +1,5 @@
 import type { EggId, NpcId, SignId } from "../contracts";
-import type { Facing } from "../types";
+import type { Facing, PathId } from "../types";
 
 export type Dir = Facing;
 
@@ -39,6 +39,8 @@ export class InputHub {
 export type WorldSnapshot = {
   /** Changes when a new climb starts, which resets the map. */
   climbId: string | null;
+  /** The topic path, which decides who guards each room. */
+  path: PathId | null;
   bloodline: number;
   nodeIndex: number;
   chests: string[];
@@ -63,6 +65,7 @@ export type WorldEvent =
 export class WorldBridge {
   snapshot: WorldSnapshot = {
     climbId: null,
+    path: null,
     bloodline: 1,
     nodeIndex: 0,
     chests: [],
